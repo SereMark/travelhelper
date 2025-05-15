@@ -427,7 +427,7 @@ const queryOpenAIWithImage = async (imageDataUrl) => {
         },
         body: JSON.stringify({
             model: "o4-mini",
-            max_tokens: 60,
+            max_completion_tokens: 60,
             messages: [{
                 role: "user",
                 content: [
