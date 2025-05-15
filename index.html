@@ -3,32 +3,62 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Traveler Demo</title>
+  <title>Traveler Demo Enhanced</title>
   <style>
     :root { font-family: system-ui, sans-serif; }
-    body     { margin: 0; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
-    header   { font-size: 1.4rem; font-weight: 600; }
-    video, canvas { max-width: 100%; border-radius: 8px; }
-    #status  { white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: .5rem; border-radius: 6px; min-height: 3rem; }
-    button   { font-size: 1rem; padding: .6rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; background: #4f46e5; color: #fff; }
+    body { margin: 0; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+    header { font-size: 1.4rem; font-weight: 600; }
+    video, canvas { max-width: 100%; border-radius: 8px; background-color: #eee; }
+    #status { white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: .5rem; border-radius: 6px; min-height: 3rem; }
+    button { font-size: 1rem; padding: .6rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; background: #4f46e5; color: #fff; }
     button:disabled { background: #999; cursor: not-allowed; }
-    #apiForm { display: flex; gap: .5rem; flex-wrap: wrap; }
-    #apiKey  { flex: 1 1 260px; padding: .6rem; font-size: 1rem; border-radius: 6px; border: 1px solid #bbb; }
-    footer   { font-size: .85rem; color: #666; }
+    #apiForm { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    #apiKey { flex: 1 1 260px; padding: .6rem; font-size: 1rem; border-radius: 6px; border: 1px solid #bbb; }
+    footer { font-size: .85rem; color: #666; margin-top: 1rem; }
+    .controls-section { border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-top: 1rem; display: flex; flex-direction: column; gap: .75rem; }
+    .controls-section h3 { margin-top: 0; margin-bottom: .5rem; font-size: 1.1rem; }
+    .control-group { display: flex; flex-direction: column; gap: .25rem; }
+    .control-group label { font-size: .9rem; color: #333; }
+    .control-group input[type="range"], .control-group select { width: 100%; max-width: 300px; }
+    .control-group output { font-size: .85rem; color: #555; }
   </style>
 </head>
 <body>
   <header>Traveler</header>
+
   <form id="apiForm">
     <input id="apiKey" type="password" placeholder="Enter your OpenAI API key" autocomplete="off" required />
     <button id="saveKey" type="submit">Save&nbsp;key</button>
     <button id="clearKey" type="button">Clear</button>
   </form>
+
+  <div class="controls-section">
+    <h3>Camera Controls</h3>
+    <div class="control-group">
+      <label for="cameraSelect">Select Camera:</label>
+      <select id="cameraSelect"></select>
+    </div>
+    <div class="control-group" id="zoomControlGroup" style="display: none;">
+      <label for="zoomSlider">Zoom: <output id="zoomValue">1</output>x</label>
+      <input type="range" id="zoomSlider" min="1" max="10" step="0.1" value="1" disabled />
+    </div>
+    <div class="control-group" id="focusModeControlGroup" style="display: none;">
+      <label for="focusModeSelect">Focus Mode:</label>
+      <select id="focusModeSelect" disabled></select>
+    </div>
+    <div class="control-group" id="focusDistanceControlGroup" style="display: none;">
+      <label for="focusSlider">Focus Distance: <output id="focusDistanceValue">auto</output></label>
+      <input type="range" id="focusSlider" min="0" max="1" step="0.01" value="0" disabled />
+    </div>
+  </div>
+
   <video id="view" autoplay muted playsinline></video>
   <button id="snapBtn" disabled>📸 Take photo</button>
   <div id="status">Waiting for API key…</div>
   <canvas id="photo" width="512" height="512" hidden></canvas>
-  <footer>❗ Demo only; nothing is stored server-side. The key stays in your browser’s <code>localStorage</code>. Works best in Chrome / Edge &mdash; iOS Safari lacks continuous speech recognition, so use the button instead.</footer>
+
+  <footer>❗ Demo only; nothing is stored server-side. The key stays in your browser’s <code>localStorage</code>. Works best in Chrome / Edge. Optical zoom selection depends on browser/OS exposing them as distinct cameras. Speech recognition behavior varies by browser.</footer>
+
   <script type="module" src="main.js"></script>
 </body>
 </html>
