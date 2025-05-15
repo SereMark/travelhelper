@@ -419,47 +419,46 @@ const takePhotoAndQuery = async () => {
 };
 
 const queryOpenAIWithImage = async (imageDataUrl) => {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${appState.apiKey}`
-    },
-    body: JSON.stringify({
-      model: "o4-mini",
-      max_tokens: 60,
-      temperature: 0,
-      messages: [
-        {
-          role: "user",
-          content: [
+    const res = await fetch(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${appState.apiKey}`
+        },
+        body: JSON.stringify({
+          model: "o4-mini",
+          max_completion_tokens: 60,
+          messages: [
             {
-              type: "text",
-              text:
-                "The image contains a question or problem. Identify the solution. " +
-                "Respond ONLY with the solution number (e.g. '1', '2'), letter " +
-                "(e.g. 'A', 'B'), or ordinal identifier (e.g. 'First', 'Second'). " +
-                "Repeat your answer three times, separated by spaces. Do not add " +
-                "anything else."
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: imageDataUrl,
-                detail: "low"
-              }
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "The image contains a question or problem. Identify the solution. " +
+                    "Return ONLY the identifier, three times, separated by spaces."
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: imageDataUrl,
+                    detail: "high"
+                  }
+                }
+              ]
             }
           ]
-        }
-      ]
-    })
-  });
-
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message ?? response.statusText);
-  return data.choices?.[0]?.message?.content?.trim() ??
-         "(Empty assistant message)";
-};
+        })
+      }
+    );
+  
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message ?? res.statusText);
+    return data.choices?.[0]?.message?.content?.trim()
+           ?? "(empty assistant message)";
+  };  
 
 const initializeApp = async () => {
     if (appState.isInitializing && appState.apiKey) return; // Prevent re-init if already key'd and running
