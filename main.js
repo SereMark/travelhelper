@@ -380,51 +380,51 @@ const stopAutoMode = () => {
 
 
 const queryOpenAIWithImage = async (imageDataUrl) => {
-    const res = await fetch(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${appState.apiKey}`
-        },
-        body: JSON.stringify({
-          model: "o4-mini",
-          max_completion_tokens: 60,
-          messages: [
+    const payload = {
+      model: "gpt-4o-mini",          // ✅ correct model name
+      max_tokens: 60,                // ✅ correct parameter
+      temperature: 0,                // (optional) makes the answer deterministic
+      messages: [
+        {
+          role: "user",
+          content: [
             {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text:
-                    "The image contains a question or problem. Identify the solution. " +
-                    "Return ONLY the identifier, three times, separated by spaces."
-                },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: imageDataUrl,
-                    detail: "high"
-                  }
-                }
-              ]
+              type: "text",
+              text:
+                "The image contains a question or problem. Identify the solution. " +
+                "Return ONLY the identifier, three times, separated by spaces."
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: imageDataUrl,
+                detail: "high"
+              }
             }
           ]
-        })
-      }
-    );
+        }
+      ]
+    };
+  
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${appState.apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
   
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message ?? res.statusText);
-    
-    const responseContent = data.choices?.[0]?.message?.content;
-    if (!responseContent || responseContent.trim() === '') {
-      console.warn("Received empty response from OpenAI API");
-      return "No response received from AI. Please try again.";
+  
+    if (!res.ok) {
+      // bubble up OpenAI error messages so they're visible in your UI
+      throw new Error(data?.error?.message || `HTTP ${res.status}`);
     }
-    
-    return responseContent.trim();
+  
+    const content = data?.choices?.[0]?.message?.content?.trim();
+    if (!content) throw new Error("Assistant returned no text.");
+    return content;
   };  
 
 const initializeApp = async () => {
