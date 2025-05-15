@@ -419,35 +419,46 @@ const takePhotoAndQuery = async () => {
 };
 
 const queryOpenAIWithImage = async (imageDataUrl) => {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${appState.apiKey}`
-        },
-        body: JSON.stringify({
-            model: "o4-mini",
-            max_completion_tokens: 60,
-            messages: [{
-                role: "user",
-                content: [
-                    { type: "image_url", image_url: { url: imageDataUrl, detail: "low" } },
-                    { 
-                        type: "text", 
-                        text: "The image contains a question or problem. Identify the solution. Respond ONLY with the solution number (e.g. '1', '2'), letter (e.g. 'A', 'B'), or ordinal identifier (e.g. 'First', 'Second'). Repeat your answer three times, separated by spaces. For example, if the answer is 'B', respond 'B B B'. If the answer is '3', respond '3 3 3'. Do not add any other words, explanations, or punctuation." 
-                    }
-                ]
-            }]
-        })
-    });
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${appState.apiKey}`
+    },
+    body: JSON.stringify({
+      model: "o4-mini",
+      max_tokens: 60,
+      temperature: 0,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text:
+                "The image contains a question or problem. Identify the solution. " +
+                "Respond ONLY with the solution number (e.g. '1', '2'), letter " +
+                "(e.g. 'A', 'B'), or ordinal identifier (e.g. 'First', 'Second'). " +
+                "Repeat your answer three times, separated by spaces. Do not add " +
+                "anything else."
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: imageDataUrl,
+                detail: "low"
+              }
+            }
+          ]
+        }
+      ]
+    })
+  });
 
-    if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        const errorMsg = errData.error?.message || `API Error ${res.status}: ${res.statusText}`;
-        throw new Error(errorMsg);
-    }
-    const json = await res.json();
-    return json.choices[0]?.message?.content?.trim() || "No response from AI.";
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message ?? response.statusText);
+  return data.choices?.[0]?.message?.content?.trim() ??
+         "(Empty assistant message)";
 };
 
 const initializeApp = async () => {
