@@ -1,432 +1,525 @@
 const $ = (id) => document.getElementById(id);
-const micStatusIcon = $("micStatusIcon");
-const restartSpeechBtn = $("restartSpeechBtn");
 
-const updateStatus = (txt, micState = "default") => {
-  $("status").textContent = txt;
-  switch (micState) {
-    case "listening": micStatusIcon.style.color = "green"; break;
-    case "processing": micStatusIcon.style.color = "blue"; break;
-    case "error": micStatusIcon.style.color = "orange"; break;
-    case "off": micStatusIcon.style.color = "grey"; break;
-    default: break; 
-  }
+const uiElements = {
+    apiKeyInput: $("apiKey"),
+    saveKeyBtn: $("saveKey"),
+    clearKeyBtn: $("clearKey"),
+    controlsArea: $("controlsArea"),
+    cameraSelect: $("cameraSelect"),
+    zoomControlGroup: $("zoomControlGroup"),
+    zoomSlider: $("zoomSlider"),
+    zoomValueOutput: $("zoomValue"),
+    focusModeControlGroup: $("focusModeControlGroup"),
+    focusModeSelect: $("focusModeSelect"),
+    focusDistanceControlGroup: $("focusDistanceControlGroup"),
+    focusSlider: $("focusSlider"),
+    focusDistanceValueOutput: $("focusDistanceValue"),
+    videoElement: $("view"),
+    photoCanvas: $("photo"),
+    snapBtn: $("snapBtn"),
+    restartSpeechBtn: $("restartSpeechBtn"),
+    statusContainer: $("statusContainer"),
+    micStatusIcon: $("micStatusIcon"),
+    statusText: $("status"),
 };
 
-let apiKey = localStorage.getItem("OPENAI_KEY") || "";
-const apiInput = $("apiKey");
-const snapBtn  = $("snapBtn");
-
-if (apiKey) {
-  apiInput.value = "********";
-  enableApp();
-} else {
-  updateStatus("Please enter your OpenAI API key to start.", "off");
-}
-
-$("apiForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const val = apiInput.value.trim();
-  if (!val) return;
-  apiKey = val;
-  localStorage.setItem("OPENAI_KEY", apiKey);
-  apiInput.value = "********";
-  enableApp();
-});
-
-$("clearKey").onclick = () => {
-  localStorage.removeItem("OPENAI_KEY");
-  apiKey = "";
-  snapBtn.disabled = true;
-  restartSpeechBtn.style.display = "none";
-  updateStatus("Key cleared. Enter a new key to continue.", "off");
-  apiInput.value = "";
-  disableApp();
+let appState = {
+    apiKey: localStorage.getItem("OPENAI_KEY") || "",
+    mediaStream: null,
+    currentVideoTrack: null,
+    speechRecognition: null,
+    isSpeechRecognitionIntended: false,
+    isCameraActive: false,
+    isInitializing: false,
 };
 
-let stream;
-let currentTrack;
-const videoElement = $("view");
-const cameraSelect = $("cameraSelect");
-const zoomSlider = $("zoomSlider");
-const zoomValueOutput = $("zoomValue");
-const focusModeSelect = $("focusModeSelect");
-const focusSlider = $("focusSlider");
-const focusDistanceValueOutput = $("focusDistanceValue");
-
-async function populateCameraList() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-    updateStatus("Camera enumeration not supported.", "error");
-    return;
-  }
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videoDevices = devices.filter(device => device.kind === 'videoinput');
-    cameraSelect.innerHTML = '';
-
-    if (videoDevices.length === 0) {
-      updateStatus("No video input devices found.", "error");
-      return;
-    }
-
-    videoDevices.forEach((device, index) => {
-      const option = document.createElement('option');
-      option.value = device.deviceId;
-      option.text = device.label || `Camera ${index + 1}`;
-      cameraSelect.appendChild(option);
-    });
-    
-    const rearCamera = videoDevices.find(d => d.label && d.label.toLowerCase().includes('back'));
-    if (rearCamera) {
-        cameraSelect.value = rearCamera.deviceId;
-    } else if (videoDevices.length > 0) {
-        cameraSelect.value = videoDevices[0].deviceId;
-    }
-
-    cameraSelect.onchange = () => {
-      startCamera(cameraSelect.value);
+const updateStatus = (text, micState = "default", isError = false) => {
+    uiElements.statusText.textContent = text;
+    uiElements.statusText.style.color = isError ? "var(--error-text, #d9534f)" : "var(--status-text, inherit)";
+    const micColorMap = {
+        listening: "green",
+        processing: "blue",
+        error: "orange",
+        off: "grey",
+        default: uiElements.micStatusIcon.style.color || "grey",
     };
-  } catch (err) {
-    console.error("Error enumerating devices:", err);
-    updateStatus("Error listing cameras: " + err.message, "error");
-  }
-}
+    uiElements.micStatusIcon.style.color = micColorMap[micState];
+};
 
-async function startCamera(deviceId) {
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-  }
-  const constraints = {
-    video: {
-      aspectRatio: { ideal: 4 / 3 },
-      width: { ideal: 512 },
-      facingMode: deviceId ? undefined : "environment",
-      deviceId: deviceId ? { exact: deviceId } : undefined
+const saveApiKey = (key) => {
+    appState.apiKey = key;
+    localStorage.setItem("OPENAI_KEY", key);
+    uiElements.apiKeyInput.value = "********";
+    uiElements.apiKeyInput.disabled = true;
+    uiElements.saveKeyBtn.disabled = true;
+    uiElements.clearKeyBtn.disabled = false;
+    updateStatus("API Key saved. Initializing application...");
+    initializeApp();
+};
+
+const clearApiKey = () => {
+    appState.apiKey = "";
+    localStorage.removeItem("OPENAI_KEY");
+    uiElements.apiKeyInput.value = "";
+    uiElements.apiKeyInput.disabled = false;
+    uiElements.saveKeyBtn.disabled = false;
+    uiElements.clearKeyBtn.disabled = true;
+    updateStatus("API Key cleared. Please enter your OpenAI API key.", "off");
+    shutdownApp();
+};
+
+const populateCameraList = async () => {
+    uiElements.cameraSelect.innerHTML = '';
+    uiElements.cameraSelect.disabled = true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        updateStatus("Camera access not supported by this browser.", "error", true);
+        return false;
     }
-  };
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        if (videoDevices.length === 0) {
+            updateStatus("No video input devices found.", "error", true);
+            return false;
+        }
+        videoDevices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            option.text = device.label || `Camera ${index + 1}`;
+            uiElements.cameraSelect.appendChild(option);
+        });
 
-  try {
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
-    videoElement.srcObject = stream;
-    currentTrack = stream.getVideoTracks()[0];
-    updateStatus("Camera started. Say \"snap\" or press the button.", isSpeechRecognitionIntended ? "listening" : "default");
-    initializeCameraControls(currentTrack);
-  } catch (err) {
-    console.error("Error starting camera:", err);
-    updateStatus(`Camera error: ${err.name}. Try another camera or check permissions.`, "error");
-    disableCameraControls();
-  }
-}
+        const preferredCamera = videoDevices.find(d => d.label && d.label.toLowerCase().includes('back')) || videoDevices[0];
+        if (preferredCamera) uiElements.cameraSelect.value = preferredCamera.deviceId;
+        
+        uiElements.cameraSelect.disabled = false;
+        return true;
+    } catch (err) {
+        updateStatus(`Error listing cameras: ${err.message}`, "error", true);
+        console.error("Error enumerating devices:", err);
+        return false;
+    }
+};
 
-function initializeCameraControls(track) {
-  const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-  const settings = track.getSettings ? track.getSettings() : {};
-  const zoomControlGroup = $("zoomControlGroup");
-
-  if (capabilities.zoom) {
-    zoomControlGroup.style.display = "flex";
-    zoomSlider.min = capabilities.zoom.min;
-    zoomSlider.max = capabilities.zoom.max;
-    zoomSlider.step = capabilities.zoom.step;
-    zoomSlider.value = settings.zoom || capabilities.zoom.min;
-    zoomValueOutput.textContent = parseFloat(zoomSlider.value).toFixed(1);
-    zoomSlider.disabled = false;
-    zoomSlider.oninput = async () => {
-      try {
-        await track.applyConstraints({ advanced: [{ zoom: zoomSlider.value }] });
-        zoomValueOutput.textContent = parseFloat(zoomSlider.value).toFixed(1);
-      } catch (err) { console.error("Error applying zoom:", err); }
-    };
-  } else {
-    zoomControlGroup.style.display = "none";
-    zoomSlider.disabled = true;
-  }
-
-  const focusModeControlGroup = $("focusModeControlGroup");
-  if (capabilities.focusMode) {
-    focusModeControlGroup.style.display = "flex";
-    focusModeSelect.innerHTML = '';
-    capabilities.focusMode.forEach(mode => {
-      const option = document.createElement('option');
-      option.value = mode;
-      option.text = mode.charAt(0).toUpperCase() + mode.slice(1);
-      focusModeSelect.appendChild(option);
-    });
-    focusModeSelect.value = settings.focusMode || capabilities.focusMode[0];
-    focusModeSelect.disabled = false;
-    focusModeSelect.onchange = async () => {
-      try {
-        await track.applyConstraints({ advanced: [{ focusMode: focusModeSelect.value }] });
-        updateFocusDistanceAvailability(track);
-      } catch (err) { console.error("Error applying focus mode:", err); }
-    };
-  } else {
-    focusModeControlGroup.style.display = "none";
-    focusModeSelect.disabled = true;
-  }
-  updateFocusDistanceAvailability(track);
-}
-
-function updateFocusDistanceAvailability(track) {
+const initializeCameraControlsUI = (track) => {
     const capabilities = track.getCapabilities ? track.getCapabilities() : {};
     const settings = track.getSettings ? track.getSettings() : {};
-    const focusDistanceControlGroup = $("focusDistanceControlGroup");
 
-    if (capabilities.focusDistance && (focusModeSelect.value === 'manual' || !capabilities.focusMode || capabilities.focusMode.length === 0)) {
-        focusDistanceControlGroup.style.display = "flex";
-        focusSlider.min = capabilities.focusDistance.min;
-        focusSlider.max = capabilities.focusDistance.max;
-        focusSlider.step = capabilities.focusDistance.step;
-        focusSlider.value = settings.focusDistance || capabilities.focusDistance.min;
-        focusDistanceValueOutput.textContent = parseFloat(focusSlider.value).toFixed(2);
-        focusSlider.disabled = false;
-        focusSlider.oninput = async () => {
+    const setupSlider = (groupEl, sliderEl, valueOutputEl, capKey, settingKey, advancedKey, unit = "") => {
+        if (capabilities[capKey] && capabilities[capKey].max > capabilities[capKey].min) {
+            groupEl.hidden = false;
+            sliderEl.min = capabilities[capKey].min;
+            sliderEl.max = capabilities[capKey].max;
+            sliderEl.step = capabilities[capKey].step || 0.1;
+            sliderEl.value = settings[settingKey] || capabilities[capKey].min;
+            valueOutputEl.textContent = `${parseFloat(sliderEl.value).toFixed(1)}${unit}`;
+            sliderEl.disabled = false;
+            sliderEl.oninput = async () => {
+                try {
+                    await track.applyConstraints({ advanced: [{ [advancedKey]: parseFloat(sliderEl.value) }] });
+                    valueOutputEl.textContent = `${parseFloat(sliderEl.value).toFixed(1)}${unit}`;
+                } catch (err) { console.error(`Error applying ${advancedKey}:`, err); }
+            };
+        } else {
+            groupEl.hidden = true;
+            sliderEl.disabled = true;
+        }
+    };
+
+    setupSlider(uiElements.zoomControlGroup, uiElements.zoomSlider, uiElements.zoomValueOutput, "zoom", "zoom", "zoom", "x");
+    
+    if (capabilities.focusMode && capabilities.focusMode.length > 0) {
+        uiElements.focusModeControlGroup.hidden = false;
+        uiElements.focusModeSelect.innerHTML = '';
+        capabilities.focusMode.forEach(mode => {
+            const option = document.createElement('option');
+            option.value = mode;
+            option.text = mode.charAt(0).toUpperCase() + mode.slice(1);
+            uiElements.focusModeSelect.appendChild(option);
+        });
+        uiElements.focusModeSelect.value = settings.focusMode || capabilities.focusMode[0];
+        uiElements.focusModeSelect.disabled = false;
+        uiElements.focusModeSelect.onchange = async () => {
             try {
-                if (capabilities.focusMode && settings.focusMode !== 'manual') {
+                await track.applyConstraints({ advanced: [{ focusMode: uiElements.focusModeSelect.value }] });
+                updateFocusDistanceAvailabilityUI(track);
+            } catch (err) { console.error("Error applying focus mode:", err); }
+        };
+    } else {
+        uiElements.focusModeControlGroup.hidden = true;
+        uiElements.focusModeSelect.disabled = true;
+    }
+    updateFocusDistanceAvailabilityUI(track);
+};
+
+const updateFocusDistanceAvailabilityUI = (track) => {
+    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+    const settings = track.getSettings ? track.getSettings() : {};
+    const currentFocusMode = uiElements.focusModeSelect.value;
+
+    if (capabilities.focusDistance && (currentFocusMode === 'manual' || !capabilities.focusMode || capabilities.focusMode.length === 0)) {
+        uiElements.focusDistanceControlGroup.hidden = false;
+        uiElements.focusSlider.min = capabilities.focusDistance.min;
+        uiElements.focusSlider.max = capabilities.focusDistance.max;
+        uiElements.focusSlider.step = capabilities.focusDistance.step || 0.01;
+        uiElements.focusSlider.value = settings.focusDistance || capabilities.focusDistance.min;
+        uiElements.focusDistanceValueOutput.textContent = parseFloat(uiElements.focusSlider.value).toFixed(2);
+        uiElements.focusSlider.disabled = false;
+        uiElements.focusSlider.oninput = async () => {
+            try {
+                if (capabilities.focusMode && settings.focusMode !== 'manual' && capabilities.focusMode.includes('manual')) {
                      await track.applyConstraints({ advanced: [{ focusMode: 'manual' }] });
-                     if (focusModeSelect.value !== 'manual') focusModeSelect.value = 'manual';
+                     if (uiElements.focusModeSelect.value !== 'manual') uiElements.focusModeSelect.value = 'manual';
                 }
-                await track.applyConstraints({ advanced: [{ focusDistance: focusSlider.value }] });
-                focusDistanceValueOutput.textContent = parseFloat(focusSlider.value).toFixed(2);
+                await track.applyConstraints({ advanced: [{ focusDistance: parseFloat(uiElements.focusSlider.value) }] });
+                uiElements.focusDistanceValueOutput.textContent = parseFloat(uiElements.focusSlider.value).toFixed(2);
             } catch (err) { console.error("Error applying focus distance:", err); }
         };
     } else {
-        focusDistanceControlGroup.style.display = "none";
-        focusSlider.disabled = true;
-        focusDistanceValueOutput.textContent = capabilities.focusMode ? "auto" : "N/A";
+        uiElements.focusDistanceControlGroup.hidden = true;
+        uiElements.focusSlider.disabled = true;
+        uiElements.focusDistanceValueOutput.textContent = capabilities.focusMode ? "auto" : "N/A";
     }
-}
-
-function disableCameraControls() {
-    $("zoomControlGroup").style.display = "none";
-    zoomSlider.disabled = true;
-    $("focusModeControlGroup").style.display = "none";
-    focusModeSelect.disabled = true;
-    $("focusDistanceControlGroup").style.display = "none";
-    focusSlider.disabled = true;
-}
-
-let recog;
-let isSpeechRecognitionIntended = false;
-
-restartSpeechBtn.onclick = () => {
-    updateStatus("Restarting microphone...", "error");
-    if (recog) {
-        isSpeechRecognitionIntended = false; // Prevent onend from auto-restarting the old instance being stopped
-        try {
-            recog.abort(); // Forcefully stop
-        } catch (e) {
-            console.warn("Error aborting speech for manual restart:", e);
-        }
-    }
-    setTimeout(() => {
-        startSpeech(); // This will set isSpeechRecognitionIntended = true and create a new instance
-    }, 250); // Brief delay
 };
 
-function startSpeech() {
-  if (!apiKey) {
-    updateStatus("API Key needed for speech recognition.", "off");
-    return;
-  }
 
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    updateStatus("Speech recognition not supported. Use the button.", "error");
-    return;
-  }
+const disableCameraControlsUI = () => {
+    uiElements.zoomControlGroup.hidden = true;
+    uiElements.zoomSlider.disabled = true;
+    uiElements.focusModeControlGroup.hidden = true;
+    uiElements.focusModeSelect.disabled = true;
+    uiElements.focusDistanceControlGroup.hidden = true;
+    uiElements.focusSlider.disabled = true;
+};
 
-  if (recog) { // If an old instance exists, try to stop it cleanly first
-      try {
-          isSpeechRecognitionIntended = false; // Mark old one as not intended to prevent its onend restart
-          recog.abort();
-      } catch(e) { console.warn("Could not abort previous recog instance before starting new:", e); }
-  }
-  
-  isSpeechRecognitionIntended = true; // Set intent for the new instance
-  recog = new SpeechRecognition();
-  recog.continuous = true;
-  recog.interimResults = false;
-
-  recog.onstart = () => {
-    updateStatus("Listening... Say \"snap\".", "listening");
-  };
-
-  recog.onresult = (e) => {
-    updateStatus("Heard you!", "processing");
-    let transcript = "";
-    for (let i = e.resultIndex; i < e.results.length; ++i) {
-        transcript += e.results[i][0].transcript;
+const startCamera = async (deviceId) => {
+    if (appState.mediaStream) {
+        appState.mediaStream.getTracks().forEach(track => track.stop());
+        appState.mediaStream = null;
+        appState.currentVideoTrack = null;
     }
-    const command = transcript.trim().toLowerCase();
-    if (command.includes("snap")) {
-      updateStatus("Heard \"snap\"! Capturing...", "processing");
-      takePhoto();
-    } else {
-        if (isSpeechRecognitionIntended) updateStatus("Listening... Say \"snap\".", "listening");
-    }
-  };
+    appState.isCameraActive = false;
+    uiElements.videoElement.srcObject = null;
+    disableCameraControlsUI();
+    updateStatus(`Starting camera ${uiElements.cameraSelect.selectedOptions[0]?.text || ''}...`, "default");
 
-  recog.onerror = (event) => {
-    console.error('Speech recognition error:', event.error, event.message);
-    let errorMsg = `Speech error: ${event.error}.`;
-    if (event.error === 'no-speech') errorMsg += " No speech detected.";
-    else if (event.error === 'audio-capture') errorMsg += " Mic problem.";
-    else if (event.error === 'network') errorMsg += " Network error.";
-    else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-      errorMsg += " Permission/service denied.";
-      isSpeechRecognitionIntended = false; // Critical, stop trying to auto-restart this instance
-      if (recog) recog.abort(); // Stop it fully.
-    }
-    updateStatus(errorMsg, "error");
-  };
+    const constraints = {
+        video: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            facingMode: deviceId ? undefined : "environment",
+            width: { ideal: 512 },
+            aspectRatio: { ideal: 4 / 3 },
+        }
+    };
 
-  recog.onend = () => {
-    if (isSpeechRecognitionIntended) {
-      // Only restart if it's supposed to be running (not manually stopped or critically errored)
-      try {
-          if (recog) recog.start(); // Attempt to restart the current instance
-      } catch (e) {
-          console.error("Error restarting speech recognition from onend:", e);
-          updateStatus("Speech recognition stopped. Try Restart Mic.", "error");
-      }
-    } else {
-        updateStatus("Speech recognition off.", "off");
-    }
-  };
-
-  try {
-    updateStatus("Initializing speech recognition...", "error");
-    recog.start();
-  } catch (e) {
-    console.error("Error starting speech recognition:", e);
-    updateStatus("Could not start speech. Use button or Restart Mic.", "error");
-    isSpeechRecognitionIntended = false;
-  }
-}
-
-function stopSpeech() {
-  isSpeechRecognitionIntended = false;
-  if (recog) {
     try {
-        recog.abort(); // Use abort for a more immediate stop
-    } catch(e) { console.warn("Error aborting speech in stopSpeech:", e);}
-  }
-  updateStatus("Speech recognition stopped.", "off");
-}
+        appState.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!appState.mediaStream) throw new Error("Media stream acquisition failed.");
+        
+        appState.currentVideoTrack = appState.mediaStream.getVideoTracks()[0];
+        if (!appState.currentVideoTrack) throw new Error("No video track found in stream.");
 
-snapBtn.onclick = takePhoto;
+        uiElements.videoElement.srcObject = appState.mediaStream;
+        
+        return new Promise((resolve, reject) => {
+            uiElements.videoElement.onloadedmetadata = () => {
+                if (uiElements.videoElement.videoWidth === 0) {
+                    const errorMsg = `Camera (${appState.currentVideoTrack.label || deviceId}) started but stream is black/empty. Try another camera.`;
+                    updateStatus(errorMsg, "error", true);
+                    reject(new Error(errorMsg));
+                    return;
+                }
+                appState.isCameraActive = true;
+                updateStatus(`Camera active: ${appState.currentVideoTrack.label || 'Unknown'}. ${appState.isSpeechRecognitionIntended ? "Listening..." : "Ready to listen."}`, appState.isSpeechRecognitionIntended ? "listening" : "default");
+                initializeCameraControlsUI(appState.currentVideoTrack);
+                uiElements.snapBtn.disabled = false;
+                resolve(true);
+            };
+            uiElements.videoElement.onerror = (e) => {
+                const errorMsg = `Error playing video from camera (${appState.currentVideoTrack?.label || deviceId}).`;
+                updateStatus(errorMsg, "error", true);
+                console.error("Video element error:", e);
+                appState.isCameraActive = false;
+                uiElements.snapBtn.disabled = true;
+                reject(new Error(errorMsg));
+            };
+        });
 
-async function takePhoto() {
-  if (!apiKey) {
-    updateStatus("Enter your API key first!", "error");
-    alert("Enter your API key first!");
-    return;
-  }
-  if (!stream || !stream.active || !currentTrack) {
-    updateStatus("Camera not active.", "error");
-    alert("Camera not active. Please ensure camera is working and selected.");
-    return;
-  }
-
-  snapBtn.disabled = true;
-  updateStatus("🔄 Capturing…", "processing");
-
-  const canvas = $("photo");
-  const ctx = canvas.getContext("2d");
-  const videoWidth = videoElement.videoWidth;
-  const videoHeight = videoElement.videoHeight;
-
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = videoWidth;
-  tempCanvas.height = videoHeight;
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.drawImage(videoElement, 0, 0, videoWidth, videoHeight);
-
-  ctx.clearRect(0,0, canvas.width, canvas.height);
-  ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
-
-  const dataURL = canvas.toDataURL("image/jpeg", 0.8);
-
-  updateStatus("📨 Sending to OpenAI…", "processing");
-
-  try {
-    const answer = await queryOpenAI(dataURL);
-    updateStatus(answer, isSpeechRecognitionIntended ? "listening" : "default");
-    speechSynthesis.speak(new SpeechSynthesisUtterance(answer));
-  } catch (err) {
-    console.error(err);
-    updateStatus("❌ " + err.message, "error");
-  } finally {
-    snapBtn.disabled = false;
-  }
-}
-
-async function queryOpenAI(imageDataUrl) {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: "o4-mini",
-      max_tokens: 50,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image_url", image_url: { url: imageDataUrl, detail: "low" } },
-          { 
-            type: "text", 
-            text: "The image contains a question or problem. Identify the solution. Respond ONLY with the solution number (e.g. '1', '2'), letter (e.g. 'A', 'B'), or ordinal identifier (e.g. 'First', 'Second'). Repeat your answer three times, separated by spaces. For example, if the answer is 'B', respond 'B B B'. If the answer is '3', respond '3 3 3'. Do not add any other words, explanations, or punctuation." 
-          }
-        ]
-      }]
-    })
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    const errorMsg = errData.error?.message || `HTTP error ${res.status}: ${res.statusText}`;
-    throw new Error(errorMsg);
-  }
-
-  const json = await res.json();
-  return json.choices[0].message.content.trim();
-}
-
-async function enableApp() {
-  snapBtn.disabled = false;
-  restartSpeechBtn.style.display = "inline-block";
-  await populateCameraList(); 
-  if (cameraSelect.options.length > 0) {
-    if (!stream || !stream.active) {
-        await startCamera(cameraSelect.value); 
+    } catch (err) {
+        updateStatus(`Failed to start camera (${uiElements.cameraSelect.selectedOptions[0]?.text || deviceId}): ${err.message}. Check permissions and try another camera.`, "error", true);
+        console.error("Error starting camera:", err);
+        appState.isCameraActive = false;
+        uiElements.snapBtn.disabled = true;
+        return false;
     }
-  } else {
-    updateStatus("No cameras found. Connect a camera and refresh.", "error");
-    disableCameraControls();
-  }
-  startSpeech(); 
-}
+};
 
-function disableApp() {
-    stopSpeech();
-    if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-        currentTrack = null;
-        videoElement.srcObject = null;
+const stopCamera = () => {
+    if (appState.mediaStream) {
+        appState.mediaStream.getTracks().forEach(track => track.stop());
     }
-    snapBtn.disabled = true;
-    restartSpeechBtn.style.display = "none";
-    disableCameraControls();
-    updateStatus("App disabled. Enter API Key.", "off");
-}
+    appState.mediaStream = null;
+    appState.currentVideoTrack = null;
+    appState.isCameraActive = false;
+    uiElements.videoElement.srcObject = null;
+    uiElements.videoElement.onloadedmetadata = null;
+    uiElements.videoElement.onerror = null;
+    disableCameraControlsUI();
+};
 
-if (apiKey) {
-  enableApp().catch(err => {
-      console.error("Error on initial enableApp:", err);
-      updateStatus("Error initializing app: " + err.message, "error");
-  });
+const startSpeechRecognition = () => {
+    if (!appState.apiKey) {
+        updateStatus("API Key needed for speech recognition.", "off");
+        return;
+    }
+    if (appState.isInitializing) return;
+
+    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+        updateStatus("Speech recognition not supported by this browser. Use the button.", "error", true);
+        return;
+    }
+
+    if (appState.speechRecognition) {
+        try {
+            appState.speechRecognition.abort();
+        } catch (e) { console.warn("Could not abort previous speech instance:", e); }
+        appState.speechRecognition = null;
+    }
+    
+    appState.isSpeechRecognitionIntended = true;
+    appState.speechRecognition = new SpeechRecognitionAPI();
+    appState.speechRecognition.continuous = true;
+    appState.speechRecognition.interimResults = false;
+
+    appState.speechRecognition.onstart = () => {
+        updateStatus("Listening... Say \"snap\".", "listening");
+    };
+
+    appState.speechRecognition.onresult = (event) => {
+        updateStatus("Heard you!", "processing");
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            transcript += event.results[i][0].transcript;
+        }
+        const command = transcript.trim().toLowerCase();
+        if (command.includes("snap")) {
+            updateStatus("Heard \"snap\"! Capturing...", "processing");
+            takePhotoAndQuery();
+        } else {
+            if (appState.isSpeechRecognitionIntended) {
+                updateStatus("Didn't catch 'snap'. Listening...", "listening");
+            }
+        }
+    };
+
+    appState.speechRecognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error, event.message);
+        let errorMsg = `Speech error: ${event.error}.`;
+        let micState = "error";
+        if (event.error === 'no-speech') errorMsg += " No speech detected.";
+        else if (event.error === 'audio-capture') errorMsg += " Mic problem.";
+        else if (event.error === 'network') errorMsg += " Network error.";
+        else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          errorMsg += " Permission/service denied.";
+          appState.isSpeechRecognitionIntended = false;
+          micState = "off";
+          if (appState.speechRecognition) try { appState.speechRecognition.abort(); } catch(e){}
+        }
+        updateStatus(errorMsg, micState, true);
+    };
+
+    appState.speechRecognition.onend = () => {
+        if (appState.isSpeechRecognitionIntended) {
+            try {
+                if (appState.speechRecognition) appState.speechRecognition.start();
+            } catch (e) {
+                console.error("Error restarting speech recognition from onend:", e);
+                updateStatus("Speech recognition stopped. Try Restart Mic.", "error", true);
+            }
+        } else {
+            updateStatus("Speech recognition off.", "off");
+        }
+    };
+
+    try {
+        updateStatus("Initializing speech recognition...", "error");
+        appState.speechRecognition.start();
+    } catch (e) {
+        console.error("Error starting speech recognition:", e);
+        updateStatus("Could not start speech. Use button or Restart Mic.", "error", true);
+        appState.isSpeechRecognitionIntended = false;
+    }
+};
+
+const stopSpeechRecognition = () => {
+    appState.isSpeechRecognitionIntended = false;
+    if (appState.speechRecognition) {
+        try {
+            appState.speechRecognition.abort();
+        } catch (e) { console.warn("Error aborting speech in stopSpeech:", e); }
+        appState.speechRecognition = null;
+    }
+    updateStatus("Speech recognition stopped.", "off");
+};
+
+const takePhotoAndQuery = async () => {
+    if (!appState.apiKey) {
+        updateStatus("API key is missing.", "error", true);
+        alert("API key is missing. Please save your API key.");
+        return;
+    }
+    if (!appState.isCameraActive || !appState.currentVideoTrack || !uiElements.videoElement.srcObject) {
+        updateStatus("Camera not active or stream not found.", "error", true);
+        alert("Camera is not active. Please ensure the camera is working and selected.");
+        return;
+    }
+
+    uiElements.snapBtn.disabled = true;
+    updateStatus("🔄 Capturing photo...", "processing");
+
+    const canvas = uiElements.photoCanvas;
+    const ctx = canvas.getContext("2d");
+    
+    const videoWidth = uiElements.videoElement.videoWidth;
+    const videoHeight = uiElements.videoElement.videoHeight;
+
+    if (videoWidth === 0 || videoHeight === 0) {
+        updateStatus("Cannot capture, video dimensions are zero.", "error", true);
+        uiElements.snapBtn.disabled = false;
+        return;
+    }
+    
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = videoWidth;
+    tempCanvas.height = videoHeight;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(uiElements.videoElement, 0, 0, videoWidth, videoHeight);
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
+    const dataURL = canvas.toDataURL("image/jpeg", 0.8);
+
+    updateStatus("📨 Sending to AI...", "processing");
+
+    try {
+        const responseText = await queryOpenAIWithImage(dataURL);
+        updateStatus(`AI: ${responseText}`, appState.isSpeechRecognitionIntended ? "listening" : "default");
+        speechSynthesis.speak(new SpeechSynthesisUtterance(responseText));
+    } catch (err) {
+        updateStatus(`❌ AI Error: ${err.message}`, "error", true);
+        console.error("OpenAI Query Error:", err);
+    } finally {
+        uiElements.snapBtn.disabled = false;
+    }
+};
+
+const queryOpenAIWithImage = async (imageDataUrl) => {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${appState.apiKey}`
+        },
+        body: JSON.stringify({
+            model: "o4-mini",
+            max_tokens: 60,
+            messages: [{
+                role: "user",
+                content: [
+                    { type: "image_url", image_url: { url: imageDataUrl, detail: "low" } },
+                    { 
+                        type: "text", 
+                        text: "The image contains a question or problem. Identify the solution. Respond ONLY with the solution number (e.g. '1', '2'), letter (e.g. 'A', 'B'), or ordinal identifier (e.g. 'First', 'Second'). Repeat your answer three times, separated by spaces. For example, if the answer is 'B', respond 'B B B'. If the answer is '3', respond '3 3 3'. Do not add any other words, explanations, or punctuation." 
+                    }
+                ]
+            }]
+        })
+    });
+
+    if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const errorMsg = errData.error?.message || `API Error ${res.status}: ${res.statusText}`;
+        throw new Error(errorMsg);
+    }
+    const json = await res.json();
+    return json.choices[0]?.message?.content?.trim() || "No response from AI.";
+};
+
+const initializeApp = async () => {
+    if (appState.isInitializing) return;
+    appState.isInitializing = true;
+
+    uiElements.controlsArea.hidden = false;
+    uiElements.snapBtn.disabled = true;
+    uiElements.restartSpeechBtn.hidden = false;
+
+    const camerasAvailable = await populateCameraList();
+    if (camerasAvailable && uiElements.cameraSelect.value) {
+        try {
+            await startCamera(uiElements.cameraSelect.value);
+        } catch (e) {
+            updateStatus(`Initial camera start failed. ${e.message}`, "error", true);
+        }
+    } else if (!camerasAvailable) {
+        updateStatus("No cameras available to start.", "error", true);
+        uiElements.snapBtn.disabled = true;
+    }
+    
+    if (appState.apiKey) { // Only start speech if API key is present
+        startSpeechRecognition();
+    } else {
+        updateStatus("API Key needed to use speech recognition.", "off");
+    }
+
+    appState.isInitializing = false;
+};
+
+const shutdownApp = () => {
+    stopCamera();
+    stopSpeechRecognition();
+    uiElements.controlsArea.hidden = true;
+    uiElements.snapBtn.disabled = true;
+    uiElements.restartSpeechBtn.hidden = true;
+    disableCameraControlsUI();
+    uiElements.cameraSelect.disabled = true;
+};
+
+uiElements.saveKeyBtn.onclick = (e) => {
+    e.preventDefault();
+    const key = uiElements.apiKeyInput.value.trim();
+    if (key) saveApiKey(key);
+    else updateStatus("API key cannot be empty.", "error", true);
+};
+
+uiElements.clearKeyBtn.onclick = clearApiKey;
+
+uiElements.cameraSelect.onchange = () => {
+    if (uiElements.cameraSelect.value) {
+        startCamera(uiElements.cameraSelect.value).catch(err => {
+            updateStatus(`Failed to switch camera: ${err.message}`, "error", true);
+        });
+    }
+};
+
+uiElements.snapBtn.onclick = takePhotoAndQuery;
+
+uiElements.restartSpeechBtn.onclick = () => {
+    updateStatus("Attempting to restart microphone...", "error");
+    stopSpeechRecognition(); 
+    setTimeout(() => {
+        startSpeechRecognition();
+    }, 250);
+};
+
+if (appState.apiKey) {
+    uiElements.apiKeyInput.value = "********";
+    uiElements.apiKeyInput.disabled = true;
+    uiElements.saveKeyBtn.disabled = true;
+    uiElements.clearKeyBtn.disabled = false;
+    initializeApp();
+} else {
+    uiElements.clearKeyBtn.disabled = true;
+    shutdownApp();
+    updateStatus("Please enter your OpenAI API key to begin.", "off");
 }

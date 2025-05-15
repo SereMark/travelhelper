@@ -3,75 +3,90 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Traveler Demo Enhanced</title>
+  <title>Traveler Vision</title>
   <style>
-    :root { font-family: system-ui, sans-serif; }
-    body { margin: 0; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
-    header { font-size: 1.4rem; font-weight: 600; }
-    video, canvas { max-width: 100%; height: auto; border-radius: 8px; background-color: #eee; }
+    :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif; color-scheme: light dark; }
+    body { margin: 0; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; background-color: var(--body-bg, #fff); color: var(--body-text, #111); }
+    @media (prefers-color-scheme: dark) {
+      :root { --body-bg: #1e1e1e; --body-text: #eee; --input-bg: #2a2a2a; --input-border: #444; --btn-bg: #5a55e0; --btn-disabled-bg: #555; --status-bg: #252525; --section-border: #333; }
+    }
+    header { font-size: 1.5rem; font-weight: 600; text-align: center; }
+    video { display: block; max-width: 100%; height: auto; border-radius: 8px; background-color: #333; margin-bottom: 1rem; border: 1px solid var(--section-border, #ccc); }
+    canvas { display: none; } /* Hidden by default */
     #statusContainer { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
     #micStatusIcon { font-size: 1.5rem; color: grey; transition: color 0.3s ease; }
-    #status { white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: .5rem; border-radius: 6px; min-height: 3rem; flex-grow: 1; }
-    button { font-size: 1rem; padding: .6rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; background: #4f46e5; color: #fff; margin-top: 0.25rem; }
-    button:disabled { background: #999; cursor: not-allowed; }
-    #apiForm { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
-    #apiKey { flex: 1 1 200px; padding: .6rem; font-size: 1rem; border-radius: 6px; border: 1px solid #bbb; }
+    #status { white-space: pre-wrap; font-family: monospace; background-color: var(--status-bg, #f5f5f5); padding: .75rem; border-radius: 6px; min-height: 3rem; flex-grow: 1; font-size: 0.9rem; line-height: 1.4; }
+    button { font-size: 1rem; padding: .7rem 1.3rem; border: none; border-radius: 6px; cursor: pointer; background-color: var(--btn-bg, #4f46e5); color: #fff; transition: background-color 0.2s ease; }
+    button:hover:not(:disabled) { background-color: var(--btn-hover-bg, #3f3ccb); }
+    button:disabled { background-color: var(--btn-disabled-bg, #999); cursor: not-allowed; opacity: 0.7; }
+    input[type="password"], input[type="range"], select {
+        padding: .7rem; font-size: 1rem; border-radius: 6px; border: 1px solid var(--input-border, #bbb);
+        background-color: var(--input-bg, #fff); color: var(--body-text, #111);
+    }
+    #apiForm { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+    #apiKey { flex: 1 1 200px; }
     #apiForm button { margin-top: 0; }
-    #restartSpeechBtn { background-color: #f0ad4e; color: white; }
-    footer { font-size: .85rem; color: #666; margin-top: 1rem; }
-    .controls-section { border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-top: 1rem; display: flex; flex-direction: column; gap: .75rem; }
+    #controlsArea { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
+    .controls-section { border: 1px solid var(--section-border, #ddd); padding: 1rem; border-radius: 8px; display: flex; flex-direction: column; gap: .75rem; }
     .controls-section h3 { margin-top: 0; margin-bottom: .5rem; font-size: 1.1rem; }
-    .control-group { display: flex; flex-direction: column; gap: .25rem; }
-    .control-group label { font-size: .9rem; color: #333; }
-    .control-group input[type="range"], .control-group select { width: 100%; max-width: 300px; }
-    .control-group output { font-size: .85rem; color: #555; }
-    #buttonContainer { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .control-group { display: flex; flex-direction: column; gap: .35rem; }
+    .control-group label { font-size: .9rem; opacity: 0.9; }
+    .control-group input[type="range"], .control-group select { width: 100%; max-width: 350px; }
+    .control-group output { font-size: .85rem; opacity: 0.8; }
+    #buttonContainer { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+    #restartSpeechBtn { background-color: #e07c42; } /* Custom color for restart */
+    footer { font-size: .85rem; color: #777; margin-top: 1.5rem; text-align: center; border-top: 1px solid var(--section-border, #eee); padding-top: 1rem;}
+    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
-  <header>Traveler</header>
+  <header>Traveler Vision</header>
 
   <form id="apiForm">
-    <input id="apiKey" type="password" placeholder="Enter your OpenAI API key" autocomplete="off" required />
-    <button id="saveKey" type="submit">Save&nbsp;key</button>
-    <button id="clearKey" type="button">Clear</button>
+    <input id="apiKey" type="password" placeholder="Enter OpenAI API key" autocomplete="off" />
+    <button id="saveKey" type="submit">Save Key</button>
+    <button id="clearKey" type="button">Clear Key</button>
   </form>
 
-  <div class="controls-section">
-    <h3>Camera Controls</h3>
-    <div class="control-group">
-      <label for="cameraSelect">Select Camera:</label>
-      <select id="cameraSelect"></select>
-    </div>
-    <div class="control-group" id="zoomControlGroup" style="display: none;">
-      <label for="zoomSlider">Zoom: <output id="zoomValue">1</output>x</label>
-      <input type="range" id="zoomSlider" min="1" max="10" step="0.1" value="1" disabled />
-    </div>
-    <div class="control-group" id="focusModeControlGroup" style="display: none;">
-      <label for="focusModeSelect">Focus Mode:</label>
-      <select id="focusModeSelect" disabled></select>
-    </div>
-    <div class="control-group" id="focusDistanceControlGroup" style="display: none;">
-      <label for="focusSlider">Focus Distance: <output id="focusDistanceValue">auto</output></label>
-      <input type="range" id="focusSlider" min="0" max="1" step="0.01" value="0" disabled />
+  <div id="controlsArea" hidden>
+    <div class="controls-section">
+      <h3>Camera Controls</h3>
+      <div class="control-group">
+        <label for="cameraSelect">Select Camera:</label>
+        <select id="cameraSelect" disabled></select>
+      </div>
+      <div class="control-group" id="zoomControlGroup" hidden>
+        <label for="zoomSlider">Zoom: <output id="zoomValue">1</output>x</label>
+        <input type="range" id="zoomSlider" min="1" max="10" step="0.1" value="1" disabled />
+      </div>
+      <div class="control-group" id="focusModeControlGroup" hidden>
+        <label for="focusModeSelect">Focus Mode:</label>
+        <select id="focusModeSelect" disabled></select>
+      </div>
+      <div class="control-group" id="focusDistanceControlGroup" hidden>
+        <label for="focusSlider">Focus Distance: <output id="focusDistanceValue">auto</output></label>
+        <input type="range" id="focusSlider" min="0" max="1" step="0.01" value="0" disabled />
+      </div>
     </div>
   </div>
 
   <video id="view" autoplay muted playsinline></video>
+  <canvas id="photo" width="512" height="384"></canvas>
   
   <div id="buttonContainer">
-      <button id="snapBtn" disabled>📸 Take photo</button>
-      <button id="restartSpeechBtn" type="button" style="display: none;">Restart Mic</button>
+      <button id="snapBtn" disabled>📸 Take Photo</button>
+      <button id="restartSpeechBtn" type="button" hidden>Restart Mic</button>
   </div>
   
   <div id="statusContainer">
     <span id="micStatusIcon">🎤</span>
-    <div id="status">Waiting for API key…</div>
+    <div id="status">Please enter your OpenAI API key to begin.</div>
   </div>
-  
-  <canvas id="photo" width="512" height="384" hidden></canvas>
 
-  <footer>❗ Demo only; nothing is stored server-side. The key stays in your browser’s <code>localStorage</code>. Works best in Chrome / Edge. Optical zoom selection depends on browser/OS exposing them as distinct cameras. Speech recognition behavior varies by browser. Aspect ratio is set to 4:3.</footer>
+  <footer>
+    Vision Assistant Demo. Uses device camera and microphone. <br/>
+    API key is stored locally in your browser. No data is stored server-side by this demo.
+  </footer>
 
   <script type="module" src="main.js"></script>
 </body>
