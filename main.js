@@ -389,8 +389,8 @@ const queryOpenAIWithImage = async (imageDataUrl) => {
           "Authorization": `Bearer ${appState.apiKey}`
         },
         body: JSON.stringify({
-          model: "o4-mini", // Make sure this model supports vision
-          max_tokens: 100, // Increased slightly from original
+          model: "o4-mini",
+          max_completion_tokens: 60,
           messages: [
             {
               role: "user",
@@ -405,7 +405,7 @@ const queryOpenAIWithImage = async (imageDataUrl) => {
                   type: "image_url",
                   image_url: {
                     url: imageDataUrl,
-                    detail: "high" // Use "auto" or "low" for faster responses if quality allows
+                    detail: "high"
                   }
                 }
               ]
@@ -416,11 +416,7 @@ const queryOpenAIWithImage = async (imageDataUrl) => {
     );
   
     const data = await res.json();
-    if (!res.ok) {
-        const errorDetail = data.error?.message || res.statusText;
-        console.error("OpenAI API Error:", data.error);
-        throw new Error(`API returned ${res.status}: ${errorDetail}`);
-    }
+    if (!res.ok) throw new Error(data.error?.message ?? res.statusText);
     return data.choices?.[0]?.message?.content?.trim()
            ?? "(empty assistant message)";
   };  
