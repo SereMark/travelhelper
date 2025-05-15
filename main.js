@@ -31,6 +31,7 @@ let appState = {
     isSpeechRecognitionIntended: false,
     isCameraActive: false,
     isInitializing: false,
+    triggerCommands: ["snap", "capture photo", "okay vision", "take picture", "go vision", "activate"],
 };
 
 const updateStatus = (text, micState = "default", isError = false) => {
@@ -201,7 +202,8 @@ const startCamera = async (deviceId) => {
     appState.isCameraActive = false;
     uiElements.videoElement.srcObject = null;
     disableCameraControlsUI();
-    updateStatus(`Starting camera ${uiElements.cameraSelect.selectedOptions[0]?.text || ''}...`, "default");
+    uiElements.snapBtn.disabled = true;
+    updateStatus(`Starting camera ${uiElements.cameraSelect.selectedOptions[0]?.text || 'selected'}...`, "default");
 
     const constraints = {
         video: {
@@ -230,7 +232,8 @@ const startCamera = async (deviceId) => {
                     return;
                 }
                 appState.isCameraActive = true;
-                updateStatus(`Camera active: ${appState.currentVideoTrack.label || 'Unknown'}. ${appState.isSpeechRecognitionIntended ? "Listening..." : "Ready to listen."}`, appState.isSpeechRecognitionIntended ? "listening" : "default");
+                const cameraName = appState.currentVideoTrack.label || 'Selected Camera';
+                updateStatus(`Camera: ${cameraName}. Say 'capture photo' or other triggers.`, appState.isSpeechRecognitionIntended ? "listening" : "default");
                 initializeCameraControlsUI(appState.currentVideoTrack);
                 uiElements.snapBtn.disabled = false;
                 resolve(true);
@@ -272,7 +275,7 @@ const startSpeechRecognition = () => {
         updateStatus("API Key needed for speech recognition.", "off");
         return;
     }
-    if (appState.isInitializing) return;
+    if (appState.isInitializing && !appState.apiKey) return;
 
     const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) {
@@ -281,9 +284,8 @@ const startSpeechRecognition = () => {
     }
 
     if (appState.speechRecognition) {
-        try {
-            appState.speechRecognition.abort();
-        } catch (e) { console.warn("Could not abort previous speech instance:", e); }
+        try { appState.speechRecognition.abort(); }
+        catch (e) { console.warn("Could not abort previous speech instance:", e); }
         appState.speechRecognition = null;
     }
     
@@ -291,24 +293,27 @@ const startSpeechRecognition = () => {
     appState.speechRecognition = new SpeechRecognitionAPI();
     appState.speechRecognition.continuous = true;
     appState.speechRecognition.interimResults = false;
+    appState.speechRecognition.lang = navigator.language || "en-US";
 
     appState.speechRecognition.onstart = () => {
-        updateStatus("Listening... Say \"snap\".", "listening");
+        updateStatus("Listening... Say 'capture photo' or other triggers.", "listening");
     };
 
     appState.speechRecognition.onresult = (event) => {
-        updateStatus("Heard you!", "processing");
         let transcript = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             transcript += event.results[i][0].transcript;
         }
         const command = transcript.trim().toLowerCase();
-        if (command.includes("snap")) {
-            updateStatus("Heard \"snap\"! Capturing...", "processing");
+        
+        const matchedTrigger = appState.triggerCommands.find(trigger => command.includes(trigger));
+
+        if (matchedTrigger) {
+            updateStatus(`Heard "${matchedTrigger}"! Capturing...`, "processing");
             takePhotoAndQuery();
         } else {
             if (appState.isSpeechRecognitionIntended) {
-                updateStatus("Didn't catch 'snap'. Listening...", "listening");
+                updateStatus("Didn't catch a trigger. Listening...", "listening");
             }
         }
     };
@@ -355,9 +360,8 @@ const startSpeechRecognition = () => {
 const stopSpeechRecognition = () => {
     appState.isSpeechRecognitionIntended = false;
     if (appState.speechRecognition) {
-        try {
-            appState.speechRecognition.abort();
-        } catch (e) { console.warn("Error aborting speech in stopSpeech:", e); }
+        try { appState.speechRecognition.abort(); }
+        catch (e) { console.warn("Error aborting speech in stopSpeech:", e); }
         appState.speechRecognition = null;
     }
     updateStatus("Speech recognition stopped.", "off");
@@ -447,11 +451,11 @@ const queryOpenAIWithImage = async (imageDataUrl) => {
 };
 
 const initializeApp = async () => {
-    if (appState.isInitializing) return;
+    if (appState.isInitializing && appState.apiKey) return; // Prevent re-init if already key'd and running
     appState.isInitializing = true;
 
     uiElements.controlsArea.hidden = false;
-    uiElements.snapBtn.disabled = true;
+    uiElements.snapBtn.disabled = true; // Will be enabled by camera success
     uiElements.restartSpeechBtn.hidden = false;
 
     const camerasAvailable = await populateCameraList();
@@ -459,14 +463,16 @@ const initializeApp = async () => {
         try {
             await startCamera(uiElements.cameraSelect.value);
         } catch (e) {
-            updateStatus(`Initial camera start failed. ${e.message}`, "error", true);
+            // Status already updated by startCamera
         }
     } else if (!camerasAvailable) {
-        updateStatus("No cameras available to start.", "error", true);
+        updateStatus("No cameras available to start. Connect a camera and refresh.", "error", true);
         uiElements.snapBtn.disabled = true;
+    } else {
+         updateStatus("Select a camera to begin.", "default");
     }
     
-    if (appState.apiKey) { // Only start speech if API key is present
+    if (appState.apiKey) {
         startSpeechRecognition();
     } else {
         updateStatus("API Key needed to use speech recognition.", "off");
@@ -476,6 +482,7 @@ const initializeApp = async () => {
 };
 
 const shutdownApp = () => {
+    appState.isInitializing = false; // Ensure this is reset
     stopCamera();
     stopSpeechRecognition();
     uiElements.controlsArea.hidden = true;
@@ -497,7 +504,7 @@ uiElements.clearKeyBtn.onclick = clearApiKey;
 uiElements.cameraSelect.onchange = () => {
     if (uiElements.cameraSelect.value) {
         startCamera(uiElements.cameraSelect.value).catch(err => {
-            updateStatus(`Failed to switch camera: ${err.message}`, "error", true);
+            // Status updated within startCamera
         });
     }
 };
@@ -512,14 +519,16 @@ uiElements.restartSpeechBtn.onclick = () => {
     }, 250);
 };
 
-if (appState.apiKey) {
-    uiElements.apiKeyInput.value = "********";
-    uiElements.apiKeyInput.disabled = true;
-    uiElements.saveKeyBtn.disabled = true;
-    uiElements.clearKeyBtn.disabled = false;
-    initializeApp();
-} else {
-    uiElements.clearKeyBtn.disabled = true;
-    shutdownApp();
-    updateStatus("Please enter your OpenAI API key to begin.", "off");
-}
+document.addEventListener('DOMContentLoaded', () => {
+    if (appState.apiKey) {
+        uiElements.apiKeyInput.value = "********";
+        uiElements.apiKeyInput.disabled = true;
+        uiElements.saveKeyBtn.disabled = true;
+        uiElements.clearKeyBtn.disabled = false;
+        initializeApp();
+    } else {
+        uiElements.clearKeyBtn.disabled = true;
+        shutdownApp(); // Ensure clean state if no API key on load
+        updateStatus("Please enter your OpenAI API key to begin.", "off");
+    }
+});
