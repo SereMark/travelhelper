@@ -417,8 +417,14 @@ const queryOpenAIWithImage = async (imageDataUrl) => {
   
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message ?? res.statusText);
-    return data.choices?.[0]?.message?.content?.trim()
-           ?? "(empty assistant message)";
+    
+    const responseContent = data.choices?.[0]?.message?.content;
+    if (!responseContent || responseContent.trim() === '') {
+      console.warn("Received empty response from OpenAI API");
+      return "No response received from AI. Please try again.";
+    }
+    
+    return responseContent.trim();
   };  
 
 const initializeApp = async () => {
