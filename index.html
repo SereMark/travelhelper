@@ -2,8 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport"
-      content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Traveler Vision · Math</title>
 <style>
 :root{--bg:#111;--fg:#fff;--accent:#5a7aff;--trk:#444}
@@ -22,9 +21,10 @@ label{font-size:.9rem;opacity:.85}
 .frame{width:100%;aspect-ratio:3/4;background:#000;border-radius:10px;overflow:hidden}
 .frame video{width:100%;height:100%;object-fit:contain}
 footer{padding:1rem;display:flex;gap:1rem}
-.logwrap{height:35vh;border-top:2px solid var(--trk);display:flex;flex-direction:column}
-#logBox{flex:1;padding:1rem;font-size:.95rem;color:var(--fg);background:var(--bg);border:none;resize:none;outline:none;overflow:auto}
-.copyBtn{width:100%;text-align:center}
+.logwrap{height:40vh;min-height:280px;border-top:2px solid var(--trk);display:flex;flex-direction:column}
+#log{flex:1;background:var(--bg);color:var(--fg);border:none;outline:none;padding:1rem;font-family:ui-monospace,monospace;font-size:.9rem;resize:none;overflow:auto}
+.bar{display:flex;gap:1rem;border-top:1px solid var(--trk)}
+.bar button,.bar label{flex:1;text-align:center}
 </style>
 </head>
 <body>
@@ -39,11 +39,7 @@ footer{padding:1rem;display:flex;gap:1rem}
   <div id="focusWrap" hidden><label>Focus <output id="fVal">auto</output></label><input id="focus" class="range" type="range" step=".01"></div>
 
   <input id="key" type="password" placeholder="OpenAI key">
-
-  <div style="display:flex;gap:1rem">
-    <button id="save">Save key</button>
-    <button id="clear" disabled>Clear</button>
-  </div>
+  <div style="display:flex;gap:1rem"><button id="save">Save</button><button id="clear" disabled>Clear</button></div>
 </div>
 
 <div class="preview"><div class="frame"><video id="view" autoplay muted playsinline></video></div></div>
@@ -51,139 +47,44 @@ footer{padding:1rem;display:flex;gap:1rem}
 <footer><button id="start" disabled>Start</button><button id="stop" disabled>Stop</button></footer>
 
 <div class="logwrap">
-  <textarea id="logBox" readonly></textarea>
-  <button id="copy" class="copyBtn">Copy all</button>
+  <textarea id="log" readonly></textarea>
+  <div class="bar">
+    <button id="copy">Copy all</button>
+    <label><input id="verb" type="checkbox"> Verbose</label>
+  </div>
 </div>
 
 <script>
 (()=>{
 
-const $ = id => document.getElementById(id);
+const $=i=>document.getElementById(i);
+const ST={key:localStorage.getItem("TV_KEY")||"",stream:null,track:null,run:false,timer:null,hwZ:1,dig:1};
+const now=()=>new Date().toLocaleTimeString();
+const log=(m,o)=>{if(!$.verb.checked&&o) return; const box=$("log");box.value+=`[${now()}] ${m}\n`;if(o)box.value+=JSON.stringify(o,null,2)+"\n";box.scrollTop=box.scrollHeight};
 
-const ST = { key:localStorage.getItem("TV_KEY")||"",stream:null,track:null,
-             run:false,timer:null,hwZoom:1,dig:1 };
+const ui=()=>{["key","save"].forEach(id=>$(id).disabled=!!ST.key);$("clear").disabled=!ST.key;$("start").disabled=!ST.track||!ST.key||ST.run;$("stop").disabled=!ST.run};
 
-const log = (m,o=null)=>{
-  const box=$("logBox");
-  box.value+=`[${new Date().toLocaleTimeString()}] ${m}\n`;
-  if(o) box.value+=JSON.stringify(o,null,2)+"\n";
-  box.scrollTop=box.scrollHeight;
-};
+const cams=async()=>{const d=await navigator.mediaDevices.enumerateDevices(),v=d.filter(x=>x.kind==="videoinput");$("cam").innerHTML="";v.forEach(c=>{const o=document.createElement("option");o.value=c.deviceId;o.textContent=c.label||"camera";$("cam").appendChild(o)});if(v.length){$("cam").hidden=false;$("cam").onchange=cam}};
 
-const ui = ()=>{
-  ["key","save"].forEach(i=>$(i).disabled=!!ST.key);
-  $("clear").disabled=!ST.key;
-  $("start").disabled=!ST.track||!ST.key||ST.run;
-  $("stop").disabled=!ST.run;
-};
+const cam=async()=>{ST.stream?.getTracks().forEach(t=>t.stop());const id=$("cam").value||undefined;ST.stream=await navigator.mediaDevices.getUserMedia({video:id?{deviceId:{exact:id},width:{ideal:1024}}:{facingMode:"environment",width:{ideal:1024}}});ST.track=ST.stream.getVideoTracks()[0];$("view").srcObject=ST.stream;log("Lens ready",{label:ST.track.label});ptz();ui()};
 
-const listCams = async()=>{
-  const dev=await navigator.mediaDevices.enumerateDevices();
-  const cams=dev.filter(d=>d.kind==="videoinput");
-  $("cam").innerHTML="";
-  cams.forEach(c=>{
-    const o=document.createElement("option");
-    o.value=c.deviceId;o.textContent=c.label||"camera";
-    $("cam").appendChild(o);
-  });
-  if(cams.length){$("cam").hidden=false;$("cam").onchange=setCam;}
-};
-
-const setCam = async()=>{
-  ST.stream?.getTracks().forEach(t=>t.stop());
-  const id=$("cam").value||undefined;
-  ST.stream=await navigator.mediaDevices.getUserMedia(
-      {video:id?{deviceId:{exact:id},width:{ideal:1024}}
-               :{facingMode:"environment",width:{ideal:1024}}});
-  ST.track=ST.stream.getVideoTracks()[0];
-  $("view").srcObject=ST.stream;
-  log("Lens ready", {label:ST.track.label});
-  initPTZ();
-  ui();
-};
-
-const initPTZ = ()=>{
-  const c=ST.track.getCapabilities(),s=ST.track.getSettings();
-  ST.hwZoom=c.zoom?c.zoom.max:1;
-  $("zoom").min=1;$("zoom").max=Math.max(12,ST.hwZoom);
-  $("zoom").value=s.zoom||1;$("zVal").textContent=$("zoom").value;
-  $("zoom").oninput=e=>{
-    const z=+e.target.value; $("zVal").textContent=z;
-    ST.dig=z>ST.hwZoom?z/ST.hwZoom:1;
-    if(z<=ST.hwZoom) ST.track.applyConstraints({advanced:[{zoom:z}]});
-  };
-  if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){
-    $("focusWrap").hidden=false;
-    $("focus").min=c.focusDistance.min; $("focus").max=c.focusDistance.max;
-    $("focus").value=s.focusDistance||c.focusDistance.min;
-    $("fVal").textContent=$("focus").value;
-    $("focus").oninput=e=>{
-      const v=+e.target.value;$("fVal").textContent=v;
-      ST.track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:v}]});
-    };
-  }else{$("focusWrap").hidden=true}
-};
+const ptz=()=>{const c=ST.track.getCapabilities(),s=ST.track.getSettings();ST.hwZ=c.zoom?c.zoom.max:1;$("zoom").min=1;$("zoom").max=Math.max(12,ST.hwZ);$("zoom").value=s.zoom||1;$("zVal").textContent=$("zoom").value;$("zoom").oninput=e=>{const z=+e.target.value;$("zVal").textContent=z;ST.dig=z>ST.hwZ?z/ST.hwZ:1;if(z<=ST.hwZ)ST.track.applyConstraints({advanced:[{zoom:z}]})};if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){$("focusWrap").hidden=false;$("focus").min=c.focusDistance.min;$("focus").max=c.focusDistance.max;$("focus").value=s.focusDistance||c.focusDistance.min;$("fVal").textContent=$("focus").value;$("focus").oninput=e=>{const v=+e.target.value;$("fVal").textContent=v;ST.track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:v}]})}}else{$("focusWrap").hidden=true}};
 
 const schedule=()=>{clearTimeout(ST.timer);if(ST.run)ST.timer=setTimeout(capture,3500)};
 
-const cropRotate=(v)=>{
-  const p=v.videoWidth<v.videoHeight,w0=v.videoWidth,h0=v.videoHeight,d=ST.dig;
-  const cw=p?h0/d:w0/d,ch=p?w0/d:h0/d,can=document.createElement("canvas");
-  can.width=p?h0:w0;can.height=p?w0:h0;
-  const ctx=can.getContext("2d");ctx.save();
-  if(p){ctx.translate(can.width/2,can.height/2);ctx.rotate(Math.PI/2);ctx.translate(-can.height/2,-can.width/2)}
-  ctx.drawImage(v,w0/2-cw/2,h0/2-ch/2,cw,ch,0,0,can.width,can.height);ctx.restore();
-  return can.toDataURL("image/jpeg",.85);
-};
+const snap=(v)=>{const p=v.videoWidth<v.videoHeight,w=v.videoWidth,h=v.videoHeight,d=ST.dig;const cw=p?h/d:w/d,ch=p?w/d:h/d,can=document.createElement("canvas");can.width=p?h:w;can.height=p?w:h;const ctx=can.getContext("2d");ctx.save();if(p){ctx.translate(can.width/2,can.height/2);ctx.rotate(Math.PI/2);ctx.translate(-can.height/2,-can.width/2)}ctx.drawImage(v,w/2-cw/2,h/2-ch/2,cw,ch,0,0,can.width,can.height);ctx.restore();return can.toDataURL("image/jpeg",.85)};
 
-const ask = async img=>{
-  const body={
-    model:"o4-mini",reasoning_effort:"high",max_completion_tokens:768,
-    messages:[{role:"user",content:[
-      {type:"text",text:"Solve the math problem in the image. Think step by step and return ONLY the numeric answer on the last line."},
-      {type:"image_url",image_url:{url:img,detail:"high"}}
-    ]}]
-  };
-  log("→ sending",body);
-  let r; try{
-    r=await fetch("https://api.openai.com/v1/chat/completions",
-      {method:"POST",headers:{"Content-Type":"application/json",
-       Authorization:`Bearer ${ST.key}`},body:JSON.stringify(body)});
-  }catch(e){throw Error("network "+e.message)}
-  const txt=await r.text();log("HTTP "+r.status,txt.slice(0,200));
-  if(!r.ok) throw Error("HTTP "+r.status);
-  const json=JSON.parse(txt);
-  const full=json.choices?.[0]?.message?.content?.trim()||"";
-  const ans=full.split(/\n/).pop().trim();
-  log("model",full.slice(0,120));
-  if(!/^\d/.test(ans)) throw Error("no numeric answer");
-  return ans;
-};
+const ask=async img=>{const body={model:"o4-mini",reasoning_effort:"high",max_completion_tokens:768,messages:[{role:"user",content:[{type:"text",text:"Solve the math problem in the image. Think step by step and return ONLY the numeric answer on the last line."},{type:"image_url",image_url:{url:img,detail:"high"}}]}]};log("Payload",body);const res=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${ST.key}`},body:JSON.stringify(body)}).catch(e=>{throw Error("network "+e.message)});const txt=await res.text();log("HTTP "+res.status,txt.slice(0,200));if(!res.ok){if(res.status===429){const wait=parseInt(res.headers.get("retry-after")||2);log("Rate-limited, waiting "+wait+" s");await new Promise(r=>setTimeout(r,wait*1000));return ask(img)}throw Error("HTTP "+res.status)}const json=JSON.parse(txt),full=json.choices?.[0]?.message?.content?.trim()||"";log("Model",full.slice(0,120));const ans=full.split(/\n/).pop().trim();if(!/^\d/.test(ans))throw Error("bad answer");return ans};
 
-const capture = async()=>{
-  const v=$("view"); if(!v.videoWidth){schedule();return}
-  const img=cropRotate(v);
-  try{const a=await ask(img);log("✓ answer: "+a);try{speechSynthesis.speak(new SpeechSynthesisUtterance(a))}catch{}}
-  catch(e){log("✗ "+e.message)}
-  schedule();
-};
+const capture=async()=>{const v=$("view");if(!v.videoWidth){schedule();return}const img=snap(v);try{const a=await ask(img);log("✓ "+a);try{speechSynthesis.speak(new SpeechSynthesisUtterance(a))}catch{}}catch(e){log("✗ "+e.message)}schedule()};
 
-/* buttons */
-$("save").onclick=()=>{ST.key=$("key").value.trim();if(!ST.key)return;
-  localStorage.setItem("TV_KEY",ST.key);$("key").value="••••••••";
-  listCams().then(setCam);ui();};
-$("clear").onclick=()=>{localStorage.removeItem("TV_KEY");ST.key="";
-  $("key").value="";ST.stream?.getTracks().forEach(t=>t.stop());ST.track=null;ui();};
-$("start").onclick=()=>{if(!ST.track||!ST.key)return;ST.run=true;capture();ui();};
-$("stop").onclick =()=>{ST.run=false;schedule();ui();};
-$("copy").onclick=async()=>{
-  try{await navigator.clipboard.writeText($("logBox").value);log("log copied")}
-  catch{const box=$("logBox");box.select();document.execCommand("copy");log("legacy copy")}
-};
-
-/* init */
-if(ST.key){$("key").value="••••••••";listCams().then(setCam)}
-ui();
+/* controls */
+$("save").onclick=()=>{ST.key=$("key").value.trim();if(!ST.key)return;localStorage.setItem("TV_KEY",ST.key);$("key").value="••••••••";cams().then(cam);ui()};
+$("clear").onclick=()=>{localStorage.removeItem("TV_KEY");ST.key="";$("key").value="";ST.stream?.getTracks().forEach(t=>t.stop());ST.track=null;ui()};
+$("start").onclick=()=>{if(ST.track&&ST.key){ST.run=true;capture();ui()}};
+$("stop").onclick =()=>{ST.run=false;schedule();ui()};
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("log").value);log("Copied")}catch{const t=$("log");t.select();document.execCommand("copy");log("Copy fallback")}};
+if(ST.key){$("key").value="••••••••";cams().then(cam)}ui();
 
 })();
 </script>
