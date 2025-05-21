@@ -543,7 +543,7 @@ Your task is to:
 
 If the image is unreadable, or no clear multiple-choice question related to Reinforcement Learning can be discerned, respond with the exact phrase: 'UNREADABLE_OR_NO_MCQ'.
 Do not add any other text if the image is unreadable or no MCQ is found.`;
-    const payload={model:"gpt-4o",max_tokens:50, messages:[{role:"user",content:[
+    const payload={model:"o4-mini",max_tokens:50, messages:[{role:"user",content:[
         {type:"text",text:rlQuizPrompt},
         {type:"image_url",image_url:{url:imageDataUrl,detail:"high"}}]}]};
     const response=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${AppState.apiKey}`},body:JSON.stringify(payload)});
