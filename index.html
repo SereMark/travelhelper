@@ -1,90 +1,187 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Traveler Vision - Auto Mode</title>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Traveler Vision</title>
+
   <style>
-    :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif; color-scheme: light dark; }
-    body { margin: 0; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; background-color: var(--body-bg, #fff); color: var(--body-text, #111); }
-    @media (prefers-color-scheme: dark) {
-      :root { --body-bg: #1e1e1e; --body-text: #eee; --input-bg: #2a2a2a; --input-border: #444; --btn-bg: #5a55e0; --btn-hover-bg: #4a45c0; --btn-disabled-bg: #555; --status-bg: #252525; --section-border: #333; --error-text: #ff7b72; --status-text: #ccc;}
+    :root{
+      --bg:#fff;--fg:#111;--accent:#4f46e5;--accent-dk:#3f3ccb;--danger:#d9534f;
     }
-    header { font-size: 1.5rem; font-weight: 600; text-align: center; }
-    video { display: block; max-width: 100%; height: auto; border-radius: 8px; background-color: #333; margin-bottom: 1rem; border: 1px solid var(--section-border, #ccc); }
-    canvas { display: none; }
-    #statusContainer { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-    #status { white-space: pre-wrap; font-family: monospace; background-color: var(--status-bg, #f5f5f5); padding: .75rem; border-radius: 6px; min-height: 3rem; flex-grow: 1; font-size: 0.9rem; line-height: 1.4; color: var(--status-text, inherit);}
-    button { font-size: 1rem; padding: .7rem 1.3rem; border: none; border-radius: 6px; cursor: pointer; background-color: var(--btn-bg, #4f46e5); color: #fff; transition: background-color 0.2s ease; }
-    button:hover:not(:disabled) { background-color: var(--btn-hover-bg, #3f3ccb); }
-    button:disabled { background-color: var(--btn-disabled-bg, #999); cursor: not-allowed; opacity: 0.7; }
-    input[type="password"], input[type="range"], select {
-        padding: .7rem; font-size: 1rem; border-radius: 6px; border: 1px solid var(--input-border, #bbb);
-        background-color: var(--input-bg, #fff); color: var(--body-text, #111);
+    @media(prefers-color-scheme:dark){
+      :root{--bg:#1e1e1e;--fg:#eee;--accent:#6366f1;--accent-dk:#4b4fe1}
     }
-    #apiForm { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
-    #apiKey { flex: 1 1 200px; }
-    #apiForm button { margin-top: 0; }
-    #controlsArea { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
-    .controls-section { border: 1px solid var(--section-border, #ddd); padding: 1rem; border-radius: 8px; display: flex; flex-direction: column; gap: .75rem; }
-    .controls-section h3 { margin-top: 0; margin-bottom: .5rem; font-size: 1.1rem; }
-    .control-group { display: flex; flex-direction: column; gap: .35rem; }
-    .control-group label { font-size: .9rem; opacity: 0.9; }
-    .control-group input[type="range"], .control-group select { width: 100%; max-width: 350px; }
-    .control-group output { font-size: .85rem; opacity: 0.8; }
-    #buttonContainer { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
-    footer { font-size: .85rem; color: #777; margin-top: 1.5rem; text-align: center; border-top: 1px solid var(--section-border, #eee); padding-top: 1rem;}
-    [hidden] { display: none !important; }
+    *{box-sizing:border-box;margin:0;padding:0;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,
+      Ubuntu,Cantarell,"Open Sans","Helvetica Neue",sans-serif}
+    body{display:flex;flex-direction:column;height:100vh;background:var(--bg);
+         color:var(--fg);padding:1rem;gap:1rem}
+
+    header{font-size:1.25rem;font-weight:600;text-align:center}
+    input,button{font-size:1rem;padding:.7rem;border-radius:6px;
+                 border:1px solid #ccc;background:var(--bg);color:var(--fg)}
+    button{background:var(--accent);border:none;color:#fff}
+    button:disabled{opacity:.5}
+    video{width:100%;border-radius:8px;background:#000;aspect-ratio:4/3}
+    #log{flex:1;overflow:auto;font-size:.8rem;line-height:1.4;
+         background:rgba(0,0,0,.05);padding:.5rem;border-radius:6px}
+    footer{display:flex;gap:.5rem}
   </style>
 </head>
+
 <body>
-  <header>Traveler Vision - Auto Mode</header>
+  <header>Traveler Vision</header>
 
-  <form id="apiForm">
-    <input id="apiKey" type="password" placeholder="Enter OpenAI API key" autocomplete="off" />
-    <button id="saveKey" type="submit">Save Key</button>
-    <button id="clearKey" type="button">Clear Key</button>
-  </form>
-
-  <div id="controlsArea" hidden>
-    <div class="controls-section">
-      <h3>Camera Controls</h3>
-      <div class="control-group">
-        <label for="cameraSelect">Select Camera:</label>
-        <select id="cameraSelect" disabled></select>
-      </div>
-      <div class="control-group" id="zoomControlGroup" hidden>
-        <label for="zoomSlider">Zoom: <output id="zoomValue">1</output>x</label>
-        <input type="range" id="zoomSlider" min="1" max="10" step="0.1" value="1" disabled />
-      </div>
-      <div class="control-group" id="focusModeControlGroup" hidden>
-        <label for="focusModeSelect">Focus Mode:</label>
-        <select id="focusModeSelect" disabled></select>
-      </div>
-      <div class="control-group" id="focusDistanceControlGroup" hidden>
-        <label for="focusSlider">Focus Distance: <output id="focusDistanceValue">auto</output></label>
-        <input type="range" id="focusSlider" min="0" max="1" step="0.01" value="0" disabled />
-      </div>
+  <!-- API-key block -->
+  <div id="auth">
+    <input id="key" type="password" placeholder="OpenAI key">
+    <div style="display:flex;gap:.5rem;margin-top:.5rem">
+      <button id="save">Save</button>
+      <button id="clear" disabled>Clear</button>
     </div>
   </div>
 
+  <!-- live view -->
   <video id="view" autoplay muted playsinline></video>
-  <canvas id="photo" width="512" height="384"></canvas>
-  
-  <div id="buttonContainer">
-      <button id="startAutoBtn" disabled>▶️ Start Auto Mode</button>
-      <button id="stopAutoBtn" type="button" disabled>⏹️ Stop Auto Mode</button>
-  </div>
-  
-  <div id="statusContainer">
-    <div id="status">Please enter your OpenAI API key to begin.</div>
-  </div>
 
+  <!-- transcript / status -->
+  <pre id="log"></pre>
+
+  <!-- controls -->
   <footer>
-    Vision Assistant Demo. Uses device camera. Ensure permissions are granted. <br/>
-    API key is stored locally in your browser. No data is stored server-side by this demo.
+    <button id="start" disabled>Start</button>
+    <button id="stop"  disabled>Stop</button>
   </footer>
 
-  <script type="module" src="main.js"></script>
+<script>
+(()=>{
+  /* ---------- helpers ---------- */
+  const $ = id => document.getElementById(id);
+  const S = { key: localStorage.getItem("TV_KEY")||"", stream:null,
+              running:false, timer:null };
+
+  const log = txt=>{
+    $("log").textContent =
+      new Date().toLocaleTimeString()+" — "+txt+"\n"+$("log").textContent;
+  };
+
+  const ui = ()=>{
+    $("key").disabled = !!S.key;
+    $("save").disabled = !!S.key;
+    $("clear").disabled = !S.key;
+    $("start").disabled = !S.stream || !S.key || S.running;
+    $("stop").disabled  = !S.running;
+  };
+
+  /* ---------- OpenAI call ---------- */
+  const ask = async dataUrl=>{
+    const payload = {
+      model: "o4-mini",
+      messages: [{
+        role:"user",
+        content:[
+          {type:"text",
+           text:"Identify the solution in the image and return the identifier "+
+                "three times separated by spaces."},
+          {type:"image_url",image_url:{url:dataUrl,detail:"low"}}
+        ]
+      }],
+      max_tokens: 60,
+      temperature: 0
+    };
+
+    const res = await fetch("https://api.openai.com/v1/chat/completions",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        Authorization:`Bearer ${S.key}`
+      },
+      body:JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if(!res.ok) throw Error(json.error?.message||res.status);
+    return json.choices[0].message.content.trim();
+  };
+
+  /* ---------- camera ---------- */
+  const startCam = async()=>{
+    try{
+      S.stream = await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:"environment",width:{ideal:640}}
+      });
+      $("view").srcObject = S.stream;
+      log("Camera ready");
+    }catch(e){
+      log("Camera error: "+e.message);
+    }
+    ui();
+  };
+
+  const stopCam = ()=>{
+    if(S.stream){ S.stream.getTracks().forEach(t=>t.stop()); }
+    S.stream=null; ui();
+  };
+
+  /* ---------- capture loop ---------- */
+  const plan = ()=>{
+    clearTimeout(S.timer);
+    if(S.running) S.timer = setTimeout(capture,4000);
+  };
+
+  const capture = async()=>{
+    const v = $("view");
+    if(!v.videoWidth){ plan(); return; }
+
+    const c = document.createElement("canvas");
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext("2d").drawImage(v,0,0,c.width,c.height);
+
+    try{
+      const reply = await ask(c.toDataURL("image/jpeg",.8));
+      log(reply);
+      /* browsers require a user gesture before speech is allowed */
+      try{ speechSynthesis.speak(new SpeechSynthesisUtterance(reply)); }
+      catch(_){}  // silently ignore autoplay-policy blocks
+    }catch(e){ log("Error: "+e.message); }
+
+    plan();
+  };
+
+  /* ---------- button handlers ---------- */
+  $("save").onclick = ()=>{
+    S.key = $("key").value.trim();
+    if(!S.key) return;
+    localStorage.setItem("TV_KEY",S.key);
+    $("key").value = "********";
+    startCam();
+  };
+
+  $("clear").onclick = ()=>{
+    localStorage.removeItem("TV_KEY");
+    S.key=""; stopCam(); ui();
+    $("key").value="";
+  };
+
+  $("start").onclick = ()=>{
+    if(!S.stream||!S.key) return;
+    S.running=true; capture(); ui();
+  };
+
+  $("stop").onclick = ()=>{
+    S.running=false; plan(); ui();
+  };
+
+  /* ---------- keyboard shortcut for testers ---------- */
+  document.addEventListener("keydown",e=>{
+    if(e.altKey&&e.key==="a"){ S.running?$("stop").click():$("start").click(); }
+  });
+
+  /* ---------- init on load ---------- */
+  if(S.key){ $("key").value="********"; startCam(); }
+  ui();
+})();
+</script>
 </body>
 </html>
