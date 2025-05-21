@@ -1,186 +1,196 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Traveler Vision</title>
-
-  <style>
-    :root{
-      --bg:#fff;--fg:#111;--accent:#4f46e5;--accent-dk:#3f3ccb;--danger:#d9534f;
-    }
-    @media(prefers-color-scheme:dark){
-      :root{--bg:#1e1e1e;--fg:#eee;--accent:#6366f1;--accent-dk:#4b4fe1}
-    }
-    *{box-sizing:border-box;margin:0;padding:0;
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,
-      Ubuntu,Cantarell,"Open Sans","Helvetica Neue",sans-serif}
-    body{display:flex;flex-direction:column;height:100vh;background:var(--bg);
-         color:var(--fg);padding:1rem;gap:1rem}
-
-    header{font-size:1.25rem;font-weight:600;text-align:center}
-    input,button{font-size:1rem;padding:.7rem;border-radius:6px;
-                 border:1px solid #ccc;background:var(--bg);color:var(--fg)}
-    button{background:var(--accent);border:none;color:#fff}
-    button:disabled{opacity:.5}
-    video{width:100%;border-radius:8px;background:#000;aspect-ratio:4/3}
-    #log{flex:1;overflow:auto;font-size:.8rem;line-height:1.4;
-         background:rgba(0,0,0,.05);padding:.5rem;border-radius:6px}
-    footer{display:flex;gap:.5rem}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Traveler Vision</title>
+<style>
+:root{--bg:#fff;--fg:#111;--accent:#4f46e5;--accent-dk:#3f3ccb}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#1e1e1e;--fg:#eee;--accent:#6366f1;--accent-dk:#4b4fe1}}
+*{box-sizing:border-box;margin:0;padding:0;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,
+  Ubuntu,Cantarell,"Open Sans","Helvetica Neue",sans-serif}
+body{display:flex;flex-direction:column;height:100vh;padding:1rem;gap:1rem;
+     background:var(--bg);color:var(--fg)}
+header{font-size:1.25rem;font-weight:600;text-align:center}
+input,select,button{font-size:1rem;padding:.7rem;border-radius:6px;
+                    border:1px solid #ccc;background:var(--bg);color:var(--fg)}
+button{background:var(--accent);border:none;color:#fff}
+button:disabled{opacity:.5}
+video{width:100%;border-radius:8px;background:#000;aspect-ratio:4/3}
+#log{flex:1;overflow:auto;font-size:.8rem;line-height:1.4;
+     background:rgba(0,0,0,.05);padding:.5rem;border-radius:6px}
+footer{display:flex;gap:.5rem}
+.control{display:flex;flex-direction:column;gap:.3rem;margin-top:.8rem}
+label{font-size:.85rem;opacity:.9}
+</style>
 </head>
 
 <body>
-  <header>Traveler Vision</header>
+<header>Traveler Vision</header>
 
-  <!-- API-key block -->
-  <div id="auth">
-    <input id="key" type="password" placeholder="OpenAI key">
-    <div style="display:flex;gap:.5rem;margin-top:.5rem">
-      <button id="save">Save</button>
-      <button id="clear" disabled>Clear</button>
-    </div>
+<div id="auth">
+  <input id="key" type="password" placeholder="OpenAI key">
+  <div style="display:flex;gap:.5rem;margin-top:.5rem">
+    <button id="save">Save</button>
+    <button id="clear" disabled>Clear</button>
   </div>
+</div>
 
-  <!-- live view -->
-  <video id="view" autoplay muted playsinline></video>
+<select id="camSelect" hidden></select>
 
-  <!-- transcript / status -->
-  <pre id="log"></pre>
+<div id="controls" hidden>
+  <div class="control" id="zoomBlock" hidden>
+    <label>Zoom (<output id="zoomVal">1</output>×)</label>
+    <input type="range" id="zoom" step="0.1">
+  </div>
+  <div class="control" id="focusBlock" hidden>
+    <label>Focus (<output id="focusVal">auto</output>)</label>
+    <input type="range" id="focus" step="0.01">
+  </div>
+</div>
 
-  <!-- controls -->
-  <footer>
-    <button id="start" disabled>Start</button>
-    <button id="stop"  disabled>Stop</button>
-  </footer>
+<video id="view" autoplay muted playsinline></video>
+<pre id="log"></pre>
+
+<footer>
+  <button id="start" disabled>Start</button>
+  <button id="stop"  disabled>Stop</button>
+</footer>
 
 <script>
 (()=>{
-  /* ---------- helpers ---------- */
-  const $ = id => document.getElementById(id);
-  const S = { key: localStorage.getItem("TV_KEY")||"", stream:null,
-              running:false, timer:null };
+const $=id=>document.getElementById(id);
+const S={key:localStorage.getItem("TV_KEY")||"",stream:null,track:null,
+         running:false,timer:null};
 
-  const log = txt=>{
-    $("log").textContent =
-      new Date().toLocaleTimeString()+" — "+txt+"\n"+$("log").textContent;
-  };
+const log=t=>{$("log").textContent=
+  new Date().toLocaleTimeString()+" — "+t+"\n"+$("log").textContent};
 
-  const ui = ()=>{
-    $("key").disabled = !!S.key;
-    $("save").disabled = !!S.key;
-    $("clear").disabled = !S.key;
-    $("start").disabled = !S.stream || !S.key || S.running;
-    $("stop").disabled  = !S.running;
-  };
+const ui=()=>{
+  $("key").disabled=!!S.key; $("save").disabled=!!S.key;
+  $("clear").disabled=!S.key;
+  $("start").disabled=!S.track||!S.key||S.running;
+  $("stop").disabled=!S.running;
+  $("camSelect").hidden=!S.track;
+  $("controls").hidden=!S.track;
+};
 
-  /* ---------- OpenAI call ---------- */
-  const ask = async dataUrl=>{
-    const payload = {
-      model: "o4-mini",
-      messages: [{
-        role:"user",
-        content:[
-          {type:"text",
-           text:"Identify the solution in the image and return the identifier "+
-                "three times separated by spaces."},
-          {type:"image_url",image_url:{url:dataUrl,detail:"low"}}
-        ]
-      }],
-      max_tokens: 60,
-      temperature: 0
-    };
-
-    const res = await fetch("https://api.openai.com/v1/chat/completions",{
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        Authorization:`Bearer ${S.key}`
-      },
-      body:JSON.stringify(payload)
-    });
-    const json = await res.json();
-    if(!res.ok) throw Error(json.error?.message||res.status);
-    return json.choices[0].message.content.trim();
-  };
-
-  /* ---------- camera ---------- */
-  const startCam = async()=>{
-    try{
-      S.stream = await navigator.mediaDevices.getUserMedia({
-        video:{facingMode:"environment",width:{ideal:640}}
-      });
-      $("view").srcObject = S.stream;
-      log("Camera ready");
-    }catch(e){
-      log("Camera error: "+e.message);
-    }
-    ui();
-  };
-
-  const stopCam = ()=>{
-    if(S.stream){ S.stream.getTracks().forEach(t=>t.stop()); }
-    S.stream=null; ui();
-  };
-
-  /* ---------- capture loop ---------- */
-  const plan = ()=>{
-    clearTimeout(S.timer);
-    if(S.running) S.timer = setTimeout(capture,4000);
-  };
-
-  const capture = async()=>{
-    const v = $("view");
-    if(!v.videoWidth){ plan(); return; }
-
-    const c = document.createElement("canvas");
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext("2d").drawImage(v,0,0,c.width,c.height);
-
-    try{
-      const reply = await ask(c.toDataURL("image/jpeg",.8));
-      log(reply);
-      /* browsers require a user gesture before speech is allowed */
-      try{ speechSynthesis.speak(new SpeechSynthesisUtterance(reply)); }
-      catch(_){}  // silently ignore autoplay-policy blocks
-    }catch(e){ log("Error: "+e.message); }
-
-    plan();
-  };
-
-  /* ---------- button handlers ---------- */
-  $("save").onclick = ()=>{
-    S.key = $("key").value.trim();
-    if(!S.key) return;
-    localStorage.setItem("TV_KEY",S.key);
-    $("key").value = "********";
-    startCam();
-  };
-
-  $("clear").onclick = ()=>{
-    localStorage.removeItem("TV_KEY");
-    S.key=""; stopCam(); ui();
-    $("key").value="";
-  };
-
-  $("start").onclick = ()=>{
-    if(!S.stream||!S.key) return;
-    S.running=true; capture(); ui();
-  };
-
-  $("stop").onclick = ()=>{
-    S.running=false; plan(); ui();
-  };
-
-  /* ---------- keyboard shortcut for testers ---------- */
-  document.addEventListener("keydown",e=>{
-    if(e.altKey&&e.key==="a"){ S.running?$("stop").click():$("start").click(); }
+const populateCameras=async()=>{
+  const list=await navigator.mediaDevices.enumerateDevices();
+  const vids=list.filter(d=>d.kind==="videoinput");
+  $("camSelect").innerHTML="";
+  vids.forEach(d=>{
+    const o=document.createElement("option");
+    o.value=d.deviceId; o.textContent=d.label||"Camera";
+    $("camSelect").appendChild(o);
   });
+  if(vids.length){$("camSelect").onchange=startCam; $("camSelect").hidden=false;}
+};
 
-  /* ---------- init on load ---------- */
-  if(S.key){ $("key").value="********"; startCam(); }
+const startCam=async()=>{
+  if(S.stream) S.stream.getTracks().forEach(t=>t.stop());
+  const id=$("camSelect").value||undefined;
+  try{
+    S.stream=await navigator.mediaDevices.getUserMedia({
+      video:id?{deviceId:{exact:id}}:{facingMode:"environment"}});
+    S.track=S.stream.getVideoTracks()[0];
+    $("view").srcObject=S.stream;
+    log("Camera ready: "+(S.track.label||""));
+    setupControls();
+  }catch(e){log("Camera error: "+e.message)}
   ui();
+};
+
+const setupControls=()=>{
+  const c=S.track.getCapabilities(); const s=S.track.getSettings();
+  /* Zoom */
+  if(c.zoom){
+    $("zoomBlock").hidden=false;
+    $("zoom").min=c.zoom.min; $("zoom").max=c.zoom.max; $("zoom").step=c.zoom.step||0.1;
+    $("zoom").value=s.zoom||c.zoom.min;
+    $("zoomVal").textContent=parseFloat($("zoom").value).toFixed(1);
+    $("zoom").oninput=async e=>{
+      const v=parseFloat(e.target.value);
+      $("zoomVal").textContent=v.toFixed(1);
+      try{await S.track.applyConstraints({advanced:[{zoom:v}]});}
+      catch(err){log("Zoom err: "+err.message);}
+    };
+  }else{$("zoomBlock").hidden=true}
+
+  /* Focus */
+  if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){
+    $("focusBlock").hidden=false;
+    $("focus").min=c.focusDistance.min; $("focus").max=c.focusDistance.max;
+    $("focus").step=c.focusDistance.step||0.01;
+    $("focus").value=s.focusDistance||c.focusDistance.min;
+    $("focusVal").textContent=parseFloat($("focus").value).toFixed(2);
+    $("focus").oninput=async e=>{
+      const v=parseFloat(e.target.value);
+      $("focusVal").textContent=v.toFixed(2);
+      try{
+        await S.track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:v}]});
+      }catch(err){log("Focus err: "+err.message);}
+    };
+  }else{$("focusBlock").hidden=true}
+};
+
+const plan=()=>{clearTimeout(S.timer);
+  if(S.running)S.timer=setTimeout(capture,4000);};
+
+const capture=async()=>{
+  const v=$("view"); if(!v.videoWidth){plan();return;}
+  const c=document.createElement("canvas");
+  c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext("2d").drawImage(v,0,0,c.width,c.height);
+  try{
+    const reply=await ask(c.toDataURL("image/jpeg",.8));
+    log(reply); try{speechSynthesis.speak(new SpeechSynthesisUtterance(reply));}catch(_){}
+  }catch(e){log("Error: "+e.message);} plan();
+};
+
+const ask=async dataUrl=>{
+  const payload={
+    model:"o4-mini",
+    messages:[{
+      role:"user",
+      content:[
+        {type:"text",text:"Identify the solution in the image and"+
+               " return the identifier three times separated by spaces."},
+        {type:"image_url",image_url:{url:dataUrl,detail:"low"}}
+      ]}],
+    max_completion_tokens:60
+  };
+  const res=await fetch("https://api.openai.com/v1/chat/completions",{
+    method:"POST",
+    headers:{"Content-Type":"application/json",
+             Authorization:`Bearer ${S.key}`},
+    body:JSON.stringify(payload)});
+  const j=await res.json();
+  if(!res.ok)throw Error(j.error?.message||res.status);
+  return j.choices[0].message.content.trim();
+};
+
+/* buttons */
+$("save").onclick=()=>{
+  S.key=$("key").value.trim(); if(!S.key)return;
+  localStorage.setItem("TV_KEY",S.key);
+  $("key").value="********"; populateCameras().then(startCam); ui();
+};
+$("clear").onclick=()=>{localStorage.removeItem("TV_KEY"); S.key="";
+  if(S.stream)S.stream.getTracks().forEach(t=>t.stop());
+  $("camSelect").hidden=$("controls").hidden=true; ui(); $("key").value="";};
+$("start").onclick=()=>{if(!S.track||!S.key)return; S.running=true; capture(); ui();}
+$("stop").onclick =()=>{S.running=false; plan(); ui();};
+document.addEventListener("keydown",e=>{
+  if(e.altKey&&e.key==="a"){S.running?$("stop").click():$("start").click();}
+});
+
+/* init */
+if(S.key){$("key").value="********"; populateCameras().then(startCam);}
+ui();
 })();
 </script>
 </body>
