@@ -519,56 +519,85 @@ const captureImage = () => {
 };
 
 const solveMathProblem = async (imageDataUrl) => {
-  if (!AppState.apiKey) throw new Error("API Key missing.");
+  if (!AppState.apiKey) throw new Error("API Key is missing.");
 
-  const prompt = `You are an AI expert in Reinforcement Learning.
-Read the MCQ in the image and determine the correct option identifier(s).
-Respond on the FIRST line only, with the letter/number (comma-separated if several),
-then write the token END and STOP. Do NOT write anything else before END.
-If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ and END`;
+  const prompt = `You are an RL expert.
+Read the multiple-choice question in the image.
+Reply on the FIRST line ONLY with the correct option identifier(s)
+(letter or number, comma-separated if several). Then write the word END.
+If the image is unreadable or no MCQ, reply exactly:
+UNREADABLE_OR_NO_MCQ END`;
 
+  const controller = new AbortController();
   const payload = {
     model: "o4-mini",
     reasoning_effort: "high",
     max_completion_tokens: 4096,
-    stop: [" END"],
-    messages: [{
-      role: "user",
-      content: [
-        { type: "text", text: prompt },
-        { type: "image_url", image_url: { url: imageDataUrl, detail: "auto" } }
-      ]
-    }]
+    stream: true,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text",  text: prompt },
+          { type: "image_url",
+            image_url: { url: imageDataUrl, detail: "auto" } }
+        ]
+      }
+    ]
   };
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${AppState.apiKey}`
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: controller.signal
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` }}));
-    throw new Error(`OpenAI API Error: ${err.error?.message || res.status}`);
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({
+      error: { message: `HTTP ${response.status}` }
+    }));
+    throw new Error(`OpenAI API Error: ${err.error?.message || response.status}`);
   }
 
-  const data = await res.json();
-  logger.log("o4-mini usage:", data.usage);
+  const answerBuf = [];
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
 
-  const raw = (data.choices?.[0]?.message?.content || "").split(" ")[0].trim();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    answerBuf.push(decoder.decode(value));
+    if (answerBuf.join("").includes(" END")) {
+      controller.abort();
+      break;
+    }
+  }
 
-  if (raw === "UNREADABLE_OR_NO_MCQ")
-    return { extractedAnswer: null, statusMessage: raw };
+  const firstLine = answerBuf
+    .join("")
+    .split("\n")[0]
+    .replace(" END", "")
+    .trim();
 
-  if (/^[A-Za-z0-9](,\s*[A-Za-z0-9])*$/.test(raw))
-    return { extractedAnswer: raw.toUpperCase(),
-             statusMessage: `AI Answer: ${raw.toUpperCase()}` };
+  if (firstLine === "UNREADABLE_OR_NO_MCQ") {
+    return { extractedAnswer: null, statusMessage: firstLine };
+  }
 
-  return { extractedAnswer: null,
-           statusMessage: "AI response format unexpected (see log)." };
+  if (/^[A-Za-z0-9](,\s*[A-Za-z0-9])*$/.test(firstLine)) {
+    return {
+      extractedAnswer: firstLine.toUpperCase(),
+      statusMessage: `AI Answer: ${firstLine.toUpperCase()}`
+    };
+  }
+
+  return {
+    extractedAnswer: null,
+    statusMessage: "AI response format unexpected (see log)."
+  };
 };
 
 const processFrame = async () => {
