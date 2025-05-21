@@ -525,18 +525,15 @@ const solveMathProblem = async (imageDataUrl) => {
     imageSizeKB: Math.round(imageDataUrl.length / 1024)
   });
 
-  const rlQuizPrompt = `You are an AI expert in Reinforcement Learning, designed to answer multiple-choice quiz questions.
-The image shows one MCQ from these RL topics:
-– Intro to RL – Imitation Learning – IRL – Value-based – Policy Gradient – Control as Inference – Direct Credit – Evaluation & Repro.
-1. Read the question and options.
-2. Identify the correct option(s).
-3. Reply ONLY with the option letter/number (e.g. B  or  A, C).
-If unreadable or no MCQ, reply: UNREADABLE_OR_NO_MCQ`;
+  const rlQuizPrompt = `You are an AI expert in Reinforcement Learning, designed to answer multiple-choice questions.
+Read the image, pick the correct option(s), and reply **only** with the letter/number.
+If more than one is correct, list them comma-separated (e.g. A, C).
+If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ`;
 
   const payload = {
     model: "o4-mini",
     reasoning_effort: "high",
-    max_completion_tokens: 50,
+    max_completion_tokens: 300,
     messages: [
       {
         role: "user",
