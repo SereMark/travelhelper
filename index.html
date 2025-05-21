@@ -3,38 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Traveler Vision · Math Mode</title>
+<title>Traveler Vision — Math Solver</title>
 <style>
-:root{--bg:#fff;--fg:#111;--accent:#4f46e5}
-@media(prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--accent:#6366f1}}
+:root{--bg:#fff;--fg:#111;--accent:#4f46e5}@media(prefers-color-scheme:dark){:root{--bg:#121212;--fg:#eee;--accent:#6366f1}}
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto}
-body{display:flex;flex-direction:column;height:100vh;gap:1rem;padding:1rem;background:var(--bg);color:var(--fg)}
-header{font:600 1.25rem/1 inherit;text-align:center}
+body{display:flex;flex-direction:column;gap:1rem;height:100vh;padding:1rem;background:var(--bg);color:var(--fg)}
+header{font:600 1.3rem/1 inherit;text-align:center}
 input,select,button{font:1rem/1 inherit;padding:.75rem;border-radius:8px;border:1px solid #ccc;background:var(--bg);color:var(--fg)}
-button{background:var(--accent);border:none;color:#fff}
-button:disabled{opacity:.5}
+button{background:var(--accent);color:#fff;border:none}
+button:disabled{opacity:.55}
 .preview{width:100%;aspect-ratio:3/4}
 video{width:100%;height:100%;border-radius:8px;background:#000;object-fit:contain}
-#log{font-size:1rem;line-height:1.4;max-height:35vh;overflow:auto;background:rgba(0,0,0,.05);padding:.7rem;border-radius:8px}
-footer{display:flex;gap:.75rem}
+#log{font-size:1rem;line-height:1.4;max-height:40vh;overflow:auto;background:rgba(0,0,0,.06);padding:.75rem;border-radius:8px}
+footer{display:flex;gap:.8rem}
 .control{display:flex;flex-direction:column;gap:.35rem;margin-top:.9rem}
 label{font-size:.9rem;opacity:.85}
 </style>
 </head>
 <body>
-<header>Traveler Vision · Math</header>
-<div id="auth">
-  <input id="key" type="password" placeholder="OpenAI key">
-  <div style="display:flex;gap:.6rem;margin-top:.6rem"><button id="save">Save</button><button id="clear" disabled>Clear</button></div>
-</div>
+<header>Traveler Vision · Math</header>
+<div id="auth"><input id="key" type="password" placeholder="OpenAI key"><div style="display:flex;gap:.6rem;margin-top:.6rem"><button id="save">Save</button><button id="clear" disabled>Clear</button></div></div>
 <select id="cam" hidden></select>
 <div id="ctrls" hidden>
-  <div class="control" id="zBlk" hidden>
-    <label>Zoom <output id="zOut">1</output>×</label><input id="zoom" type="range" min="1" max="10" step="0.1">
-  </div>
-  <div class="control" id="fBlk" hidden>
-    <label>Focus <output id="fOut">auto</output></label><input id="focus" type="range" step="0.01">
-  </div>
+  <div class="control" id="zBlk" hidden><label>Zoom <output id="zOut">1</output>×</label><input id="zoom" type="range" min="1" max="12" step="0.1"></div>
+  <div class="control" id="fBlk" hidden><label>Focus <output id="fOut">auto</output></label><input id="focus" type="range" step="0.01"></div>
 </div>
 <div class="preview"><video id="view" autoplay muted playsinline></video></div>
 <pre id="log" title="double‑tap to expand"></pre>
@@ -42,32 +34,31 @@ label{font-size:.9rem;opacity:.85}
 <script>
 (()=>{
 const $=id=>document.getElementById(id);
-const S={key:localStorage.getItem("TV_KEY")||"",stream:null,track:null,run:false,timer:null,hwZoom:1,digZoom:1};
+let stream=null,track=null,run=false,timer=null,hwMaxZoom=1,digMult=1,key=localStorage.getItem("TV_KEY")||"";
+/* util */
 const log=t=>{$("log").textContent=`${new Date().toLocaleTimeString()} — ${t}\n`+$("log").textContent};
-const ui=()=>{$("key").disabled=!!S.key;$("save").disabled=!!S.key;$("clear").disabled=!S.key;$("start").disabled=!S.track||!S.key||S.run;$("stop").disabled=!S.run;$("cam").hidden=!S.track;$("ctrls").hidden=!S.track};
-/* cams */
-const list=async()=>{const d=await navigator.mediaDevices.enumerateDevices();const v=d.filter(x=>x.kind==="videoinput");$("cam").innerHTML="";v.forEach(c=>{const o=document.createElement("option");o.value=c.deviceId;o.textContent=c.label||"camera";$("cam").appendChild(o);});$("cam").hidden=!v.length;$("cam").onchange=start;};
-/* start cam */
-const start=async()=>{if(S.stream)S.stream.getTracks().forEach(t=>t.stop());const id=$("cam").value||undefined;try{S.stream=await navigator.mediaDevices.getUserMedia({video:id?{deviceId:{exact:id}}:{facingMode:"environment"}});S.track=S.stream.getVideoTracks()[0];$("view").srcObject=S.stream;log(`Lens: ${S.track.label||""}`);ptz();}catch(e){log(`Cam error: ${e.message}`);}ui();};
-/* PTZ setup */
-const ptz=()=>{const c=S.track.getCapabilities(),s=S.track.getSettings();/* zoom */if(c.zoom){$("zBlk").hidden=false;S.hwZoom=c.zoom.max;$("zoom").max=10;$("zoom").value=s.zoom||1;$("zOut").textContent=$("zoom").value;}else{$("zBlk").hidden=true;S.hwZoom=1;}/* focus */if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){$("fBlk").hidden=false;$("focus").min=c.focusDistance.min;$("focus").max=c.focusDistance.max;$("focus").step=c.focusDistance.step||0.01;$("focus").value=s.focusDistance||c.focusDistance.min;$("fOut").textContent=$("focus").value;}else{$("fBlk").hidden=true;}};
-/* live PTZ apply */
-const apply=async()=>{const tasks=[];const z=parseFloat($("zoom").value);$("zOut").textContent=z;S.digZoom=z>S.hwZoom?z/S.hwZoom:1;if(z<=S.hwZoom)tasks.push(S.track.applyConstraints({advanced:[{zoom:z}]}));if(!$("fBlk").hidden){const f=parseFloat($("focus").value);$("fOut").textContent=f;tasks.push(S.track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:f}]}));}await Promise.allSettled(tasks);} ;
-$("zoom").oninput=apply;$("focus").oninput=apply;
-/* loop */
-const plan=()=>{clearTimeout(S.timer);if(S.run)S.timer=setTimeout(capture,3500);};
-const capture=async()=>{const v=$("view");if(!v.videoWidth){plan();return;}await apply();const portrait=v.videoWidth<v.videoHeight;const srcW=portrait?v.videoHeight/S.digZoom:v.videoWidth/S.digZoom;const srcH=portrait?v.videoWidth/S.digZoom:v.videoHeight/S.digZoom;const cx=v.videoWidth/2,cy=v.videoHeight/2;const can=document.createElement("canvas");can.width=portrait?v.videoHeight:v.videoWidth;can.height=portrait?v.videoWidth:v.videoHeight;const ctx=can.getContext("2d");ctx.save();if(portrait){ctx.translate(can.width/2,can.height/2);ctx.rotate(Math.PI/2);ctx.translate(-can.height/2,-can.width/2);}ctx.drawImage(v,cx-srcW/2,cy-srcH/2,srcW,srcH,0,0,can.width,can.height);ctx.restore();try{const ans=await ask(can.toDataURL("image/jpeg",0.85));log(ans);try{speechSynthesis.speak(new SpeechSynthesisUtterance(ans));}catch{}}catch(e){log(`AI error: ${e.message}`);}plan();};
-/* OpenAI */
-const ask=async img=>{const body={model:"o4-mini",messages:[{role:"user",content:[{type:"text",text:"Solve the math problem in the image. Think step by step, then output ONLY the numeric answer on the last line."},{type:"image_url",image_url:{url:img,detail:"high"}}]}],max_completion_tokens:512,reasoning_effort:"high"};const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${S.key}`},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw Error(j.error?.message||r.status);return j.choices[0].message.content.trim();};
+const ui=()=>{$("key").disabled=!!key;$("save").disabled=!!key;$("clear").disabled=!key;$("start").disabled=!track||!key||run;$("stop").disabled=!run;$("cam").hidden=!track;$("ctrls").hidden=!track};
+/* camera list */
+async function listCams(){const d=await navigator.mediaDevices.enumerateDevices();const cams=d.filter(x=>x.kind==="videoinput");$("cam").innerHTML="";cams.forEach(c=>{const o=document.createElement("option");o.value=c.deviceId;o.textContent=c.label||"camera";$("cam").appendChild(o);});$("cam").hidden=!cams.length;$("cam").onchange=startCam;}
+/* start selected camera */
+async function startCam(){if(stream)stream.getTracks().forEach(t=>t.stop());const id=$("cam").value||undefined;try{stream=await navigator.mediaDevices.getUserMedia({video:id?{deviceId:{exact:id},width:{ideal:1024}}:{facingMode:"environment",width:{ideal:1024}}});track=stream.getVideoTracks()[0];$("view").srcObject=stream;log(`Lens: ${track.label||""}`);setupPTZ();}catch(e){log(`Cam error: ${e.message}`);}ui();}
+/* PTZ */
+function setupPTZ(){const c=track.getCapabilities(),s=track.getSettings();if(c.zoom){$("zBlk").hidden=false;hwMaxZoom=c.zoom.max;$("zoom").value=s.zoom||1;$("zOut").textContent=$("zoom").value;}else{$("zBlk").hidden=true;hwMaxZoom=1;}if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){$("fBlk").hidden=false;$("focus").min=c.focusDistance.min;$("focus").max=c.focusDistance.max;$("focus").step=c.focusDistance.step||0.01;$("focus").value=s.focusDistance||c.focusDistance.min;$("fOut").textContent=$("focus").value;}else{$("fBlk").hidden=true;}}
+async function applyPTZ(){const tasks=[];const z=parseFloat($("zoom").value);$("zOut").textContent=z;digMult=z>hwMaxZoom?z/hwMaxZoom:1;if(z<=hwMaxZoom)tasks.push(track.applyConstraints({advanced:[{zoom:z}]}));if(!$("fBlk").hidden){const f=parseFloat($("focus").value);$("fOut").textContent=f;tasks.push(track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:f}]}));}await Promise.allSettled(tasks);}$("zoom").oninput=applyPTZ;$("focus").oninput=applyPTZ;
+/* capture */
+function plan(){clearTimeout(timer);if(run)timer=setTimeout(capture,3500);}
+async function capture(){const v=$("view");if(!v.videoWidth){plan();return;}await applyPTZ();const portrait=v.videoWidth<v.videoHeight;const srcW=portrait?v.videoHeight/digMult:v.videoWidth/digMult;const srcH=portrait?v.videoWidth/digMult:v.videoHeight/digMult;const cx=v.videoWidth/2,cy=v.videoHeight/2;const can=document.createElement("canvas");can.width=portrait?v.videoHeight:v.videoWidth;can.height=portrait?v.videoWidth:v.videoHeight;const ctx=can.getContext("2d");ctx.save();if(portrait){ctx.translate(can.width/2,can.height/2);ctx.rotate(Math.PI/2);ctx.translate(-can.height/2,-can.width/2);}ctx.drawImage(v,cx-srcW/2,cy-srcH/2,srcW,srcH,0,0,can.width,can.height);ctx.restore();try{const ans=await solveImage(can.toDataURL("image/jpeg",0.85));log(ans);try{speechSynthesis.speak(new SpeechSynthesisUtterance(ans));}catch{}}catch(e){log(e.message);}plan();}
+/* OpenAI robust helper */
+async function solveImage(b64){const make=(effort)=>({model:"o4-mini",max_completion_tokens:512,reasoning_effort:effort,messages:[{role:"user",content:[{type:"text",text:"Solve the math problem in the image. Think step by step. Return ONLY the numeric answer on the last line."},{type:"image_url",image_url:{url:b64,detail:"high"}}]}]});for(const eff of["medium","high"]){const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`},body:JSON.stringify(make(eff))}).then(x=>x.json());const t=r?.choices?.[0]?.message?.content?.trim()||"";if(/\d/.test(t)&&!/^sorry/i.test(t))return t.split(/\n/).pop();await new Promise(res=>setTimeout(res,800));}throw new Error("o4‑mini failed after retries");}
 /* buttons */
-$("save").onclick=()=>{S.key=$("key").value.trim();if(!S.key)return;localStorage.setItem("TV_KEY",S.key);$("key").value="********";list().then(start);ui();};
-$("clear").onclick=()=>{localStorage.removeItem("TV_KEY");S.key="";if(S.stream)S.stream.getTracks().forEach(t=>t.stop());S.track=null;$("cam").hidden=$("ctrls").hidden=true;ui();$("key").value="";};
-$("start").onclick=()=>{if(!S.track||!S.key)return;S.run=true;capture();ui();};
-$("stop").onclick=()=>{S.run=false;plan();ui();};
+$("save").onclick=()=>{key=$("key").value.trim();if(!key)return;localStorage.setItem("TV_KEY",key);$("key").value="********";listCams().then(startCam);ui();};
+$("clear").onclick=()=>{localStorage.removeItem("TV_KEY");key="";if(stream)stream.getTracks().forEach(t=>t.stop());track=null;$("cam").hidden=$("ctrls").hidden=true;ui();$("key").value="";};
+$("start").onclick=()=>{if(!track||!key)return;run=true;capture();ui();};
+$("stop").onclick=()=>{run=false;plan();ui();};
 /* log expand */
-let big=false;$("log").ondblclick=()=>{big=!big;$("log").style.maxHeight=big?"80vh":"35vh";};
+let big=false;$("log").ondblclick=()=>{big=!big;$("log").style.maxHeight=big?"80vh":"40vh";};
 /* init */
-if(S.key){$("key").value="********";list().then(start);} ui();
+if(key){$("key").value="********";listCams().then(startCam);}ui();
 })();
 </script>
 </body>
