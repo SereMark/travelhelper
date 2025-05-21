@@ -6,12 +6,11 @@
       content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Traveler Vision</title>
 <style>
-:root{--bg:#fff;--fg:#111;--accent:#4f46e5;--accent-dk:#3f3ccb}
+:root{--bg:#fff;--fg:#111;--accent:#4f46e5}
 @media(prefers-color-scheme:dark){
-  :root{--bg:#1e1e1e;--fg:#eee;--accent:#6366f1;--accent-dk:#4b4fe1}}
+  :root{--bg:#1e1e1e;--fg:#eee;--accent:#6366f1}}
 *{box-sizing:border-box;margin:0;padding:0;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,
-  Ubuntu,Cantarell,"Open Sans","Helvetica Neue",sans-serif}
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto}
 body{display:flex;flex-direction:column;height:100vh;padding:1rem;gap:1rem;
      background:var(--bg);color:var(--fg)}
 header{font-size:1.25rem;font-weight:600;text-align:center}
@@ -19,9 +18,10 @@ input,select,button{font-size:1rem;padding:.7rem;border-radius:6px;
                     border:1px solid #ccc;background:var(--bg);color:var(--fg)}
 button{background:var(--accent);border:none;color:#fff}
 button:disabled{opacity:.5}
-video{width:100%;border-radius:8px;background:#000;aspect-ratio:4/3}
-#log{flex:1;overflow:auto;font-size:.8rem;line-height:1.4;
-     background:rgba(0,0,0,.05);padding:.5rem;border-radius:6px}
+.preview{width:100%;aspect-ratio:3/4}
+video{width:100%;height:100%;border-radius:8px;background:#000;object-fit:contain}
+#log{flex:1;overflow:auto;font-size:.8rem;background:rgba(0,0,0,.05);
+     padding:.6rem;border-radius:6px}
 footer{display:flex;gap:.5rem}
 .control{display:flex;flex-direction:column;gap:.3rem;margin-top:.8rem}
 label{font-size:.85rem;opacity:.9}
@@ -43,16 +43,16 @@ label{font-size:.85rem;opacity:.9}
 
 <div id="controls" hidden>
   <div class="control" id="zoomBlock" hidden>
-    <label>Zoom (<output id="zoomVal">1</output>×)</label>
+    <label>Zoom <output id="zoomVal">1</output>×</label>
     <input type="range" id="zoom" step="0.1">
   </div>
   <div class="control" id="focusBlock" hidden>
-    <label>Focus (<output id="focusVal">auto</output>)</label>
+    <label>Focus <output id="focusVal">auto</output></label>
     <input type="range" id="focus" step="0.01">
   </div>
 </div>
 
-<video id="view" autoplay muted playsinline></video>
+<div class="preview"><video id="view" autoplay muted playsinline></video></div>
 <pre id="log"></pre>
 
 <footer>
@@ -74,20 +74,19 @@ const ui=()=>{
   $("clear").disabled=!S.key;
   $("start").disabled=!S.track||!S.key||S.running;
   $("stop").disabled=!S.running;
-  $("camSelect").hidden=!S.track;
-  $("controls").hidden=!S.track;
+  $("camSelect").hidden=!S.track; $("controls").hidden=!S.track;
 };
 
-const populateCameras=async()=>{
-  const list=await navigator.mediaDevices.enumerateDevices();
-  const vids=list.filter(d=>d.kind==="videoinput");
+const populateCams=async()=>{
+  const d=await navigator.mediaDevices.enumerateDevices();
+  const cams=d.filter(x=>x.kind==="videoinput");
   $("camSelect").innerHTML="";
-  vids.forEach(d=>{
+  cams.forEach(c=>{
     const o=document.createElement("option");
-    o.value=d.deviceId; o.textContent=d.label||"Camera";
+    o.value=c.deviceId; o.textContent=c.label||"Camera";
     $("camSelect").appendChild(o);
   });
-  if(vids.length){$("camSelect").onchange=startCam; $("camSelect").hidden=false;}
+  if(cams.length){$("camSelect").hidden=false;$("camSelect").onchange=startCam;}
 };
 
 const startCam=async()=>{
@@ -98,57 +97,57 @@ const startCam=async()=>{
       video:id?{deviceId:{exact:id}}:{facingMode:"environment"}});
     S.track=S.stream.getVideoTracks()[0];
     $("view").srcObject=S.stream;
-    log("Camera ready: "+(S.track.label||""));
-    setupControls();
+    log("Lens: "+(S.track.label||""));
+    setupPTZ();
   }catch(e){log("Camera error: "+e.message)}
   ui();
 };
 
-const setupControls=()=>{
-  const c=S.track.getCapabilities(); const s=S.track.getSettings();
-  /* Zoom */
-  if(c.zoom){
+const setupPTZ=()=>{
+  const cap=S.track.getCapabilities(); const set=S.track.getSettings();
+
+  if(cap.zoom){
     $("zoomBlock").hidden=false;
-    $("zoom").min=c.zoom.min; $("zoom").max=c.zoom.max; $("zoom").step=c.zoom.step||0.1;
-    $("zoom").value=s.zoom||c.zoom.min;
-    $("zoomVal").textContent=parseFloat($("zoom").value).toFixed(1);
+    $("zoom").min=cap.zoom.min; $("zoom").max=cap.zoom.max;
+    $("zoom").step=cap.zoom.step||0.1;
+    $("zoom").value=set.zoom||cap.zoom.min;
+    $("zoomVal").textContent=$("zoom").value;
     $("zoom").oninput=async e=>{
-      const v=parseFloat(e.target.value);
-      $("zoomVal").textContent=v.toFixed(1);
+      const v=parseFloat(e.target.value);$("zoomVal").textContent=v;
       try{await S.track.applyConstraints({advanced:[{zoom:v}]});}
-      catch(err){log("Zoom err: "+err.message);}
+      catch(err){log("Zoom error: "+err.message);}
     };
   }else{$("zoomBlock").hidden=true}
 
-  /* Focus */
-  if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){
+  if(cap.focusMode&&cap.focusMode.includes("manual")&&cap.focusDistance){
     $("focusBlock").hidden=false;
-    $("focus").min=c.focusDistance.min; $("focus").max=c.focusDistance.max;
-    $("focus").step=c.focusDistance.step||0.01;
-    $("focus").value=s.focusDistance||c.focusDistance.min;
-    $("focusVal").textContent=parseFloat($("focus").value).toFixed(2);
+    $("focus").min=cap.focusDistance.min; $("focus").max=cap.focusDistance.max;
+    $("focus").step=cap.focusDistance.step||0.01;
+    $("focus").value=set.focusDistance||cap.focusDistance.min;
+    $("focusVal").textContent=$("focus").value;
     $("focus").oninput=async e=>{
-      const v=parseFloat(e.target.value);
-      $("focusVal").textContent=v.toFixed(2);
+      const v=parseFloat(e.target.value);$("focusVal").textContent=v;
       try{
-        await S.track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:v}]});
-      }catch(err){log("Focus err: "+err.message);}
+        await S.track.applyConstraints(
+          {advanced:[{focusMode:"manual",focusDistance:v}]});
+      }catch(err){log("Focus error: "+err.message);}
     };
   }else{$("focusBlock").hidden=true}
 };
 
 const plan=()=>{clearTimeout(S.timer);
-  if(S.running)S.timer=setTimeout(capture,4000);};
+  if(S.running) S.timer=setTimeout(capture,4000);};
 
 const capture=async()=>{
-  const v=$("view"); if(!v.videoWidth){plan();return;}
+  const v=$("view");if(!v.videoWidth){plan();return;}
   const c=document.createElement("canvas");
   c.width=v.videoWidth; c.height=v.videoHeight;
   c.getContext("2d").drawImage(v,0,0,c.width,c.height);
   try{
-    const reply=await ask(c.toDataURL("image/jpeg",.8));
-    log(reply); try{speechSynthesis.speak(new SpeechSynthesisUtterance(reply));}catch(_){}
-  }catch(e){log("Error: "+e.message);} plan();
+    const res=await ask(c.toDataURL("image/jpeg",.8));
+    log(res); try{speechSynthesis.speak(new SpeechSynthesisUtterance(res));}catch(_){}
+  }catch(e){log("AI error: "+e.message);}
+  plan();
 };
 
 const ask=async dataUrl=>{
@@ -157,39 +156,40 @@ const ask=async dataUrl=>{
     messages:[{
       role:"user",
       content:[
-        {type:"text",text:"Identify the solution in the image and"+
-               " return the identifier three times separated by spaces."},
-        {type:"image_url",image_url:{url:dataUrl,detail:"low"}}
+        {type:"text",
+         text:"Solve the following problem. Think step by step and show all "+
+              "reasoning. Then RETURN ONLY the final numeric answer on the "+
+              "last line.\n\nProblem image follows."},
+        {type:"image_url",image_url:{url:dataUrl,detail:"high"}}
       ]}],
-    max_completion_tokens:60
+    max_completion_tokens:512,
+    reasoning_effort:"high"
   };
-  const res=await fetch("https://api.openai.com/v1/chat/completions",{
+  const r=await fetch("https://api.openai.com/v1/chat/completions",{
     method:"POST",
     headers:{"Content-Type":"application/json",
              Authorization:`Bearer ${S.key}`},
     body:JSON.stringify(payload)});
-  const j=await res.json();
-  if(!res.ok)throw Error(j.error?.message||res.status);
+  const j=await r.json();
+  if(!r.ok) throw Error(j.error?.message||r.status);
   return j.choices[0].message.content.trim();
 };
 
 /* buttons */
-$("save").onclick=()=>{
-  S.key=$("key").value.trim(); if(!S.key)return;
-  localStorage.setItem("TV_KEY",S.key);
-  $("key").value="********"; populateCameras().then(startCam); ui();
-};
-$("clear").onclick=()=>{localStorage.removeItem("TV_KEY"); S.key="";
+$("save").onclick=()=>{S.key=$("key").value.trim();if(!S.key)return;
+  localStorage.setItem("TV_KEY",S.key);$("key").value="********";
+  populateCams().then(startCam);ui();};
+$("clear").onclick=()=>{localStorage.removeItem("TV_KEY");S.key="";
   if(S.stream)S.stream.getTracks().forEach(t=>t.stop());
-  $("camSelect").hidden=$("controls").hidden=true; ui(); $("key").value="";};
-$("start").onclick=()=>{if(!S.track||!S.key)return; S.running=true; capture(); ui();}
-$("stop").onclick =()=>{S.running=false; plan(); ui();};
+  $("camSelect").hidden=$("controls").hidden=true;ui();$("key").value="";};
+$("start").onclick=()=>{if(!S.track||!S.key)return;S.running=true;capture();ui();}
+$("stop").onclick=()=>{S.running=false;plan();ui();};
 document.addEventListener("keydown",e=>{
   if(e.altKey&&e.key==="a"){S.running?$("stop").click():$("start").click();}
 });
 
 /* init */
-if(S.key){$("key").value="********"; populateCameras().then(startCam);}
+if(S.key){$("key").value="********";populateCams().then(startCam);}
 ui();
 })();
 </script>
