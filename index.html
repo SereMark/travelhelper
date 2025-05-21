@@ -530,11 +530,12 @@ The image contains a multiple-choice question from one of the following Reinforc
 - Policy Gradient (PG) Methods (PG I, PG 2)
 - Control as Inference
 - Direct Credit Assignment
+- Evaluation and Reproducibility in RL
 
 Your task is to:
 1. Carefully analyze the question and the provided options in the image.
 2. Determine the correct option(s).
-3. Respond with ONLY the letter (e.g., A, B, C, D, E) or the ordinal number (e.g., 1, 2, 3, 4, 5) corresponding to the correct option.
+3. Respond with ONLY the letter (e.g., A, B, C, D, E, F, G, H) or the ordinal number (e.g., 1, 2, 3, 4, 5, 6, 7, 8) corresponding to the correct option.
    - If there are multiple correct options and the question asks to "select one or more", list all correct option identifiers separated by commas (e.g., A, C or 1, 3).
    - Do NOT provide any explanation, reasoning, or any other text. ONLY the option identifier(s).
    - For example, if option B is correct, your entire response should be: B
@@ -555,7 +556,7 @@ Do not add any other text if the image is unreadable or no MCQ is found.`;
     if (extractedAnswer === 'UNREADABLE_OR_NO_MCQ') {
         return { extractedAnswer: null, statusMessage: "AI: Image unreadable or no MCQ found." };
     }
-    if (/^[A-Ea-e1-5](,\s*[A-Ea-e1-5])*$/.test(extractedAnswer)) {
+    if (/^[A-Ha-h1-8](,\s*[A-Ha-h1-8])*$/.test(extractedAnswer)) {
         return { extractedAnswer: extractedAnswer.toUpperCase(), statusMessage: `AI Answer: ${extractedAnswer.toUpperCase()}` };
     }
     logger.log("AI response not in expected option format.", {rawResponse: extractedAnswer});
