@@ -267,13 +267,12 @@ const updateStatus = (message, type = 'info', showSpinnerOnVideo = false) => {
     const criticalOverlay = $('criticalMessageOverlay');
     const criticalMessageText = $('criticalMessageText');
 
-    // Clear critical overlay unless this call is making it critical
     if (type !== 'critical') {
         criticalOverlay.classList.remove('visible');
     }
 
-    if (message) { // Only update status bar if message is provided
-        statusBar.innerHTML = message; // Allow HTML for line breaks
+    if (message) {
+        statusBar.innerHTML = message;
         statusBar.className = 'status-bar'; 
         if (type === 'error') statusBar.classList.add('error');
         else if (type === 'success') statusBar.classList.add('success');
@@ -284,8 +283,8 @@ const updateStatus = (message, type = 'info', showSpinnerOnVideo = false) => {
     if (type === 'critical') {
         criticalMessageText.innerHTML = message;
         criticalOverlay.classList.add('visible');
-        videoSpinnerOverlay.classList.remove('visible'); // Don't show spinner if critical message is up
-        if(statusBar) statusBar.innerHTML = ''; // Clear status bar text if critical overlay is shown
+        videoSpinnerOverlay.classList.remove('visible');
+        if(statusBar) statusBar.innerHTML = ''; 
     }
 };
 
@@ -312,14 +311,11 @@ const updateUI = () => {
     $('copyLogBtn').disabled = ($('logTextarea').value.trim() === "");
     $('toggleLogBtn').textContent = AppState.isLogVisible ? 'Hide Log' : 'Log';
 
-    // Status Update Logic - driven by AppState and specific function calls
-    // This function mainly handles button states and conditional visibility of control groups.
-    // Specific status messages are now set by the functions that change the app's state.
     if (AppState.isInitializingCamera) {
-        // updateStatus is called by listCameras/initCamera
+        // Status is set by the function initiating camera initialization
     } else if (!keyPresent) {
-        // updateStatus is called by DOMContentLoaded if no key
-        // This ensures API key input is visible.
+        // Initial API key prompt is handled by DOMContentLoaded
+        // Ensure API key input is visible
         $('apiKeyEntryRow').classList.remove('hidden-control');
         $('apiKeyDisplayRow').classList.add('hidden-control');
     } else if (!AppState.videoTrack) {
@@ -327,8 +323,8 @@ const updateUI = () => {
     } else if (AppState.isProcessing) {
         // "Capturing", "Analyzing" set by processFrame
     } else if (cameraIsActuallyReady) {
-        // If no other status is active, and camera is ready, show "Ready!"
-        if ($('statusBar').textContent === 'Initializing app...' || $('statusBar').textContent === '' || $('statusBar').textContent.includes("Initializing camera")) {
+        const currentStatus = $('statusBar').textContent;
+        if (currentStatus === 'Initializing app...' || currentStatus === '' || currentStatus.includes("Initializing camera") || currentStatus.includes("Stopped") || currentStatus.includes("API Key cleared")) {
             updateStatus("Ready! Aim at problem.", 'success', false);
         }
     }
@@ -357,12 +353,12 @@ const _initCameraWork = async (deviceId) => {
     logger.log(`Video track acquired: ${AppState.videoTrack.label}`);
     const vidEl=$('videoPreview'); vidEl.srcObject=AppState.mediaStream;
     await promiseWithTimeout(new Promise((res,rej)=>{const ol=()=>{vidEl.onloadedmetadata=null;vidEl.onerror=null;res();};const oe=()=>{vidEl.onloadedmetadata=null;vidEl.onerror=null;rej(new Error("Video element failed to load stream."));};vidEl.onloadedmetadata=ol;vidEl.onerror=oe;}),5000,"Video stream metadata loading timed out.");
-    logger.success(`Camera active: ${AppState.videoTrack.label||'N/A'}`); setupCameraControls(); // This will call updateUI
+    logger.success(`Camera active: ${AppState.videoTrack.label||'N/A'}`); setupCameraControls();
 };
 
 const listCameras = async () => {
     if(AppState.isInitializingCamera){logger.log("listCameras skipped: initialization already in progress.");return;}
-    AppState.isInitializingCamera=true; updateStatus("Initializing camera...", 'info', true); // Show spinner on video
+    AppState.isInitializingCamera=true; updateStatus("Initializing camera...", 'info', true);
     try{
         logger.log("Verifying camera permissions...");
         try{const ps=await promiseWithTimeout(navigator.mediaDevices.getUserMedia({video:true,audio:false}),8000,"Camera permission check timed out.");ps.getTracks().forEach(t=>t.stop());logger.log("Preliminary camera permission check passed.");}
@@ -372,7 +368,7 @@ const listCameras = async () => {
             if(pErr.name==="NotAllowedError"||pErr.name==="PermissionDeniedError")m="Camera access denied.<br>Please allow camera access in your browser settings and refresh the page.";
             else if(pErr.message.includes("timed out"))m="Camera permission check timed out.<br>Please respond to any browser prompts, then refresh.";
             else m = `Camera permission error: ${pErr.name || pErr.message}`;
-            updateStatus(m,'critical'); throw pErr; // Use critical overlay
+            updateStatus(m,'critical'); throw pErr;
         }
         logger.log("Enumerating video devices...");
         const devs=await navigator.mediaDevices.enumerateDevices(); const vidDevs=devs.filter(d=>d.kind==='videoinput');
@@ -386,19 +382,15 @@ const listCameras = async () => {
         await _initCameraWork(selDevId);
     }catch(err){
         logger.error(`listCameras main process error: ${err.message}`,err);
-        if(!AppState.videoTrack){ // If camera didn't actually start and error wasn't 'critical' already
-             if (!document.querySelector('.critical-message-overlay.visible')) { // Avoid overwriting specific critical messages
-                let uMsg=`Failed to initialize camera system.`;
-                if(err.name==="NotFoundError"||err.name==="DevicesNotFoundError"||err.message.includes("No video devices"))uMsg="No suitable camera found on device.";
-                else if(err.name==="OverconstrainedError"||err.name==="ConstraintNotSatisfiedError")uMsg="Camera does not support requested settings.";
-                else if(err.message.includes("timed out"))uMsg=err.message; // Already user-friendly
-                else if(err.message && !(err.name==="NotAllowedError"||err.name==="PermissionDeniedError")) uMsg=`Camera error: ${err.message.substring(0,60)}`; // Don't show generic if it was perm error
-                else if (!(err.name==="NotAllowedError"||err.name==="PermissionDeniedError")) uMsg = "An unknown error occurred with the camera."; // Catch-all if no specific message and not perm error
-                
-                // Only update status if it's not a permission error already handled by critical overlay
-                if (!(err.name==="NotAllowedError"||err.name==="PermissionDeniedError" || err.message.includes("timed out") && document.querySelector('.critical-message-overlay.visible'))) {
-                    updateStatus(uMsg,'error');
-                }
+        if(!AppState.videoTrack && !document.querySelector('.critical-message-overlay.visible')){
+            let uMsg=`Failed to initialize camera system.`;
+            if(err.name==="NotFoundError"||err.name==="DevicesNotFoundError"||err.message.includes("No video devices"))uMsg="No suitable camera found on device.";
+            else if(err.name==="OverconstrainedError"||err.name==="ConstraintNotSatisfiedError")uMsg="Camera does not support requested settings.";
+            else if(err.message.includes("timed out"))uMsg=err.message;
+            else if(err.message && !(err.name==="NotAllowedError"||err.name==="PermissionDeniedError")) uMsg=`Camera error: ${err.message.substring(0,60)}`;
+            else if (!(err.name==="NotAllowedError"||err.name==="PermissionDeniedError")) uMsg = "An unknown error occurred with the camera.";
+            if (!(err.name==="NotAllowedError"||err.name==="PermissionDeniedError" || (err.message.includes("timed out") && document.querySelector('.critical-message-overlay.visible')))) {
+                updateStatus(uMsg,'error');
             }
         }
         releaseCamera();
@@ -424,23 +416,38 @@ const captureImage = () => {
 };
 
 const solveMathProblem = async (imageDataUrl) => {
-    if(!AppState.apiKey)throw new Error("API Key needed."); logger.log("Sending to OpenAI...",{imgKB:Math.round(imageDataUrl.length/1024)});
-    const payload={model:"gpt-4o-mini",max_tokens:800,messages:[{role:"user",content:[
-        {type:"text",text:"You are a precise math problem solver. Analyze the image. Provide step-by-step thinking to solve the math problem. On the VERY LAST line, provide ONLY the final numeric answer, prefixed with 'Final Answer:'. For example: 'Final Answer: 42'. If no clear math problem is found, state 'No clear math problem detected.' If the image is unreadable or too blurry, state 'Image is unreadable.' Do not add any other pleasantries or extra text on the final answer line."},
+    if(!AppState.apiKey)throw new Error("API Key is missing."); logger.log("Sending image to OpenAI (gpt-4o)...",{imageSizeKB:Math.round(imageDataUrl.length/1024)});
+    const newPrompt = `You are an advanced AI math and logic problem solver. Analyze the image thoroughly.
+Identify the core question or task. This could be:
+1. A direct math problem requiring a numerical answer.
+2. A word problem requiring setup and then a numerical answer.
+3. A conceptual math question requiring an explanation or a true/false type answer.
+4. A request to describe how to solve a problem or outline logic for a program related to a mathematical concept.
+5. A logic puzzle.
+
+Provide a clear, step-by-step explanation of your thinking process to address the identified question or task.
+- If a specific numerical answer is appropriate and derivable, ensure your explanation leads to it and conclude with a separate line: 'Final Answer: [your numerical answer]'.
+- If the task is conceptual or requires a descriptive answer (e.g., explaining a theorem, outlining program logic, true/false with reasoning), provide that detailed explanation as the main part of your response.
+- If the image is unreadable, or no clear question/problem can be discerned that you can confidently address, state 'Image is unreadable or no clear problem detected.' as your primary response.
+Be comprehensive in your explanation. Structure your response clearly.`;
+    const payload={model:"gpt-4o",max_tokens:1500,messages:[{role:"user",content:[
+        {type:"text",text:newPrompt},
         {type:"image_url",image_url:{url:imageDataUrl,detail:"high"}}]}]};
     const response=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${AppState.apiKey}`},body:JSON.stringify(payload)});
     if(!response.ok){const d=await response.json().catch(()=>({error:{message:`HTTP ${response.status}`}}));const m=d.error?.message||`HTTP ${response.status}`;
         if(response.status===401)throw new Error("Invalid OpenAI API Key (401).");
         if(response.status===429){logger.error("OpenAI rate limit. Retrying...",d);await new Promise(rs=>setTimeout(rs,7000));if(!AppState.isProcessing)throw new Error("Stopped during retry.");return solveMathProblem(imageDataUrl);}
         throw new Error(`OpenAI API Error: ${m}`);}
-    const result=await response.json(); logger.log("OpenAI response received.",result.usage);
-    const content=result.choices?.[0]?.message?.content?.trim().replace(/\.$/, "") || "No AI content.";
-    const lines=content.split('\n'); const lastLine=lines[lines.length-1];
-    const answerMatch=lastLine.match(/Final Answer:\s*(\-?\d+(\.\d+)?)/); const numericAnswer=answerMatch?answerMatch[1]:null;
-    const lowerContent = content.toLowerCase();
-    if (lowerContent.includes("no clear math problem detected")) return { fullText: content, numericAnswer: null, statusMessage: "AI: No clear math problem detected." };
-    if (lowerContent.includes("image is unreadable")) return { fullText: content, numericAnswer: null, statusMessage: "AI: Image is unreadable." };
-    return { fullText: content, numericAnswer, statusMessage: numericAnswer ? `Solved: ${numericAnswer}` : "Could not extract numeric answer from AI response." };
+    const result=await response.json(); logger.log("OpenAI response received (gpt-4o).",result.usage);
+    const fullText=result.choices?.[0]?.message?.content?.trim() || "No content received from AI.";
+    let numericAnswer = null; const lines = fullText.split('\n');
+    const lastLineWithAnswer = lines.find(line => line.startsWith("Final Answer:"));
+    if (lastLineWithAnswer) { const answerMatch = lastLineWithAnswer.match(/Final Answer:\s*(\-?\d+(\.\d+)?)/); if (answerMatch) numericAnswer = answerMatch[1]; }
+    const lowerContent = fullText.toLowerCase();
+    if (lowerContent.includes("no clear problem detected")) return { fullText, numericAnswer: null, statusMessage: "AI: No clear math problem detected." };
+    if (lowerContent.includes("image is unreadable")) return { fullText, numericAnswer: null, statusMessage: "AI: Image is unreadable." };
+    if (numericAnswer) return { fullText, numericAnswer, statusMessage: `Solved: ${numericAnswer}` };
+    return { fullText, numericAnswer: null, statusMessage: "AI response received (see log)." };
 };
 
 const processFrame = async () => {
@@ -448,16 +455,16 @@ const processFrame = async () => {
     updateStatus("Capturing...", 'info', true); const imgData=captureImage();
     if(!imgData){logger.error("Image capture failed for processing.");if(AppState.isProcessing)AppState.captureTimeout=setTimeout(processFrame,3500);updateStatus("Capture failed.",'error');updateUI();return;}
     try{
-        updateStatus("Analyzing with AI...", 'info', true);
+        updateStatus("Analyzing with AI (gpt-4o)...", 'info', true);
         const{fullText,numericAnswer,statusMessage}=await solveMathProblem(imgData);
-        logger.log(`AI Response: ${statusMessage}`, { fullAIResponseForVerbose: $('verboseLogCheck').checked ? fullText : "Verbose off" });
+        logger.log(`AI Response: ${statusMessage}`, { fullAIResponseForVerbose: $('verboseLogCheck').checked ? fullText : "Verbose logging off" });
         if(numericAnswer){
-            logger.success(`Solution: ${numericAnswer}`); updateStatus(`Answer: ${numericAnswer}`,'success');
+            logger.success(`Extracted Numeric Solution: ${numericAnswer}`); updateStatus(`Answer: ${numericAnswer}`,'success');
             showToast(`Answer: ${numericAnswer}`,'success',5000);
             try{speechSynthesis.speak(new SpeechSynthesisUtterance(numericAnswer));}catch(e){logger.error("Speech synthesis failed.",e);}
         }else{
-            logger.log(statusMessage||"AI provided no numeric answer."); updateStatus(statusMessage,'info'); // Show specific AI feedback if available
-            showToast(statusMessage||"No numeric answer found.",'info',4000);
+            logger.log(statusMessage||"AI provided no numeric answer."); updateStatus(statusMessage.length > 60 ? statusMessage.substring(0, 57) + "..." : statusMessage,'info');
+            showToast(statusMessage.length > 40 ? statusMessage.substring(0, 37) + "..." : statusMessage,'info',4000);
         }
     }catch(err){
         logger.error(`Processing error: ${err.message}`,err);
@@ -466,10 +473,8 @@ const processFrame = async () => {
         else{updateStatus(`Error: ${err.message.substring(0,60)}...`,'error');}
     }finally{
         if(AppState.isProcessing){
-            if (AppState.videoTrack && !AppState.isInitializingCamera) { // Only set to ready if camera is good
-                 updateStatus("Ready for next. Aim.", 'info', false);
-            } // Otherwise, an error status or init status might already be there
-            AppState.captureTimeout=setTimeout(processFrame,3500);
+            if (AppState.videoTrack && !AppState.isInitializingCamera) { updateStatus("Ready for next. Aim.", 'info', false); }
+            AppState.captureTimeout=setTimeout(processFrame,4500);
         }else{ updateUI(); }
     }
 };
@@ -481,9 +486,9 @@ const updateZoomTypeIndicator = () => {
 const toggleLogPanel = () => { AppState.isLogVisible=!AppState.isLogVisible; $('logPanel').classList.toggle('visible',AppState.isLogVisible); updateUI(); };
 
 // --- Event Listeners ---
-$('saveKeyBtn').onclick=()=>{if(AppState.isInitializingCamera||AppState.isProcessing)return;const kI=$('apiKey').value.trim();if(kI.startsWith("sk-")){AppState.apiKey=kI;try{localStorage.setItem("TV_API_KEY",kI);}catch(e){logger.error("localStorage error (save key).",e);}logger.success("API Key Saved!");if(!AppState.videoTrack){listCameras();}updateUI();}else{logger.error("Invalid API Key format. Must start with 'sk-'.");}};
+$('saveKeyBtn').onclick=()=>{if(AppState.isInitializingCamera||AppState.isProcessing)return;const kI=$('apiKey').value.trim();if(kI.startsWith("sk-")){AppState.apiKey=kI;try{localStorage.setItem("TV_API_KEY",kI);}catch(e){logger.error("localStorage error (save key).",e);}logger.success("API Key Saved!");if(!AppState.videoTrack && !AppState.isInitializingCamera){listCameras();}updateUI();}else{logger.error("Invalid API Key format. Must start with 'sk-'.");}};
 $('changeKeyBtn').onclick=()=>{if(AppState.isInitializingCamera||AppState.isProcessing)return;$('apiKeyEntryRow').classList.remove('hidden-control');$('apiKeyDisplayRow').classList.add('hidden-control');$('apiKey').value=AppState.apiKey;$('apiKey').focus();updateUI();};
-$('clearKeyBtn').onclick=()=>{if(AppState.isInitializingCamera||AppState.isProcessing)return;logger.log("Clearing API Key.");AppState.apiKey="";try{localStorage.removeItem("TV_API_KEY");}catch(e){logger.error("localStorage error (clear key).",e);}$('apiKey').value="";if(AppState.isProcessing)$('stopBtn').click();releaseCamera();logger.success("API Key Cleared.");updateStatus("API Key cleared. Please enter a new key.", 'info');updateUI();};
+$('clearKeyBtn').onclick=()=>{if(AppState.isInitializingCamera||AppState.isProcessing)return;logger.log("Clearing API Key.");AppState.apiKey="";try{localStorage.removeItem("TV_API_KEY");}catch(e){logger.error("localStorage error (clear key).",e);}$('apiKey').value="";if(AppState.isProcessing)$('stopBtn').click();releaseCamera();logger.success("API Key Cleared.");updateStatus("API Key cleared. Enter new key.", 'info');updateUI();};
 $('zoomSlider').oninput=(e)=>{if(AppState.isInitializingCamera||!AppState.videoTrack)return;const z=parseFloat(e.target.value);$('zoomOutput').textContent=z.toFixed(1);AppState.currentZoom=z;updateZoomTypeIndicator();if(AppState.videoTrack&&AppState.cameraCapabilities.zoom&&z<=AppState.cameraCapabilities.zoom.max)AppState.videoTrack.applyConstraints({advanced:[{zoom:z}]}).catch(err=>logger.error(`Hardware zoom error`,err));};
 $('focusSlider').oninput=(e)=>{if(AppState.isInitializingCamera||!AppState.videoTrack)return;if(AppState.videoTrack&&AppState.cameraCapabilities.focus){const f=parseFloat(e.target.value);$('focusOutput').textContent=f.toFixed(2);AppState.videoTrack.applyConstraints({advanced:[{focusMode:'manual',focusDistance:f}]}).catch(err=>logger.error(`Focus error`,err));}};
 $('startBtn').onclick=()=>{if(AppState.isProcessing||AppState.isInitializingCamera||!AppState.videoTrack||!AppState.apiKey)return;AppState.isProcessing=true;logger.log("Processing started by user.");updateStatus("Starting...",'info',true);updateUI();processFrame();};
@@ -493,22 +498,21 @@ $('verboseLogCheck').onchange=()=>{logger.log(`Verbose logging ${$('verboseLogCh
 $('toggleLogBtn').onclick = toggleLogPanel;
 
 document.addEventListener('DOMContentLoaded',()=>{
+    updateStatus("Initializing app...", 'info'); // Initial status
     try{AppState.apiKey=localStorage.getItem("TV_API_KEY")||"";}catch(e){logger.error("localStorage error (load key).",e);AppState.apiKey="";}
     try{$('verboseLogCheck').checked=localStorage.getItem("TV_VERBOSE_LOG")==='true';}catch(e){logger.error("localStorage error (load verbose).",e);}
     if(AppState.apiKey){
-        listCameras(); // This will set initializing true and update UI
+        listCameras();
     } else {
         updateStatus("Welcome!<br>Please enter OpenAI API Key to begin.", 'info'); // Use status bar, not critical overlay
     }
-    updateUI(); // Ensure correct initial UI state
+    updateUI();
 });
 document.addEventListener("visibilitychange",()=>{
     if(document.visibilityState==='hidden'){
         if(AppState.isProcessing){$('stopBtn').click();logger.log("App hidden, processing stopped.");}
-        if(AppState.videoTrack)releaseCamera(); // Only release if active
-        updateUI(); // Reflect camera off state
+        if(AppState.videoTrack)releaseCamera(); updateUI();
     }else if(document.visibilityState==='visible'){
-        // Re-initialize camera if API key is present, camera was active before, and not currently initializing
         if(AppState.apiKey && !AppState.videoTrack && !AppState.isInitializingCamera){
             logger.log("App visible, attempting to re-initialize camera.");listCameras();
         }
