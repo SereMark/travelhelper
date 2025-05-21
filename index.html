@@ -5,26 +5,26 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Traveler Vision · Math</title>
 <style>
-:root{--bg:#111;--fg:#fff;--accent:#5a7aff;--trk:#444}
-@media(prefers-color-scheme:light){:root{--bg:#fff;--fg:#111;--accent:#4f6bff;--trk:#ddd}}
-*{box-sizing:border-box;margin:0;padding:0;font:400 16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial}
+:root{--bg:#111;--fg:#fff;--hi:#5a7aff;--trk:#555}
+@media(prefers-color-scheme:light){:root{--bg:#fff;--fg:#111;--hi:#4f6bff;--trk:#ccc}}
+*{box-sizing:border-box;margin:0;padding:0;font:400 16px/1.4 system-ui}
 body{display:flex;flex-direction:column;height:100vh;background:var(--bg);color:var(--fg)}
-header{padding:1rem;font-weight:600;text-align:center;border-bottom:1px solid var(--trk)}
+header{padding:1rem;text-align:center;font-weight:600;border-bottom:1px solid var(--trk)}
 .top{padding:1rem;display:flex;flex-direction:column;gap:1rem;position:sticky;top:0;background:var(--bg);z-index:2}
-input,select,button{padding:.95rem;border-radius:8px;border:1px solid var(--trk);background:var(--bg);color:var(--fg);font:inherit}
-button{background:var(--accent);color:#fff;border:none}
+input,select,button{padding:1rem;border-radius:8px;border:1px solid var(--trk);background:var(--bg);color:var(--fg);font:inherit}
+button{background:var(--hi);color:#fff;border:none}
 button:disabled{opacity:.55}
 label{font-size:.9rem;opacity:.85}
-.range{appearance:none;width:100%;height:5px;border-radius:3px;background:var(--trk)}
-.range::-webkit-slider-thumb{appearance:none;width:22px;height:22px;border-radius:50%;background:var(--accent);cursor:pointer;border:none}
+.range{appearance:none;width:100%;height:6px;border-radius:3px;background:var(--trk)}
+.range::-webkit-slider-thumb{appearance:none;width:24px;height:24px;border-radius:50%;background:var(--hi);border:none;cursor:pointer}
 .preview{flex:1;display:flex;justify-content:center;align-items:center}
-.frame{width:100%;aspect-ratio:3/4;background:#000;border-radius:10px;overflow:hidden}
-.frame video{width:100%;height:100%;object-fit:contain}
+.frame{width:100%;aspect-ratio:3/4;border-radius:10px;overflow:hidden;background:#000}
+video{width:100%;height:100%;object-fit:contain}
 footer{padding:1rem;display:flex;gap:1rem}
-.logwrap{height:40vh;min-height:280px;border-top:2px solid var(--trk);display:flex;flex-direction:column}
-#log{flex:1;background:var(--bg);color:var(--fg);border:none;outline:none;padding:1rem;font-family:ui-monospace,monospace;font-size:.9rem;resize:none;overflow:auto}
-.bar{display:flex;gap:1rem;border-top:1px solid var(--trk)}
-.bar button,.bar label{flex:1;text-align:center}
+.logwrap{height:40vh;min-height:260px;border-top:2px solid var(--trk);display:flex;flex-direction:column}
+#log{flex:1;font-family:ui-monospace,monospace;background:var(--bg);color:var(--fg);border:none;resize:none;outline:none;padding:1rem;font-size:.9rem;overflow:auto}
+.bar{display:flex;border-top:1px solid var(--trk)}
+.bar button,.bar label{flex:1;text-align:center;padding:.85rem}
 </style>
 </head>
 <body>
@@ -32,11 +32,11 @@ footer{padding:1rem;display:flex;gap:1rem}
 <header>Traveler Vision · Math</header>
 
 <div class="top">
-  <select id="cam" hidden></select>
+  <select id="cams" hidden></select>
 
-  <div><label>Zoom <output id="zO">1</output>×</label><input id="zoom" class="range" type="range" step=".1"></div>
+  <div><label>Zoom <output id="zOut">1</output>×</label><input id="zoom" class="range" type="range" step=".1"></div>
 
-  <div id="fWrap" hidden><label>Focus <output id="fO">auto</output></label><input id="focus" class="range" type="range" step=".01"></div>
+  <div id="fWrap" hidden><label>Focus <output id="fOut">auto</output></label><input id="focus" class="range" type="range" step=".01"></div>
 
   <input id="key" type="password" placeholder="OpenAI key">
   <div style="display:flex;gap:1rem"><button id="save">Save</button><button id="clear" disabled>Clear</button></div>
@@ -50,112 +50,113 @@ footer{padding:1rem;display:flex;gap:1rem}
   <textarea id="log" readonly></textarea>
   <div class="bar">
     <button id="copy">Copy all</button>
-    <label><input id="verb" type="checkbox"> Verbose</label>
+    <label style="display:flex;align-items:center;gap:.5rem;justify-content:center">
+      <input id="verb" type="checkbox">Verbose
+    </label>
   </div>
 </div>
 
 <script>
 (()=>{
 
-const $=id=>document.getElementById(id);
-const st={k:localStorage.getItem("TV_KEY")||"",s:null,t:null,run:false,timer:null,hw:1,dig:1};
-const ts=()=>new Date().toLocaleTimeString();
-const add=(m,o)=>{if(!$.verb.checked&&o) return; const b=$("log");b.value+=`[${ts()}] ${m}\n`; if(o) b.value+=JSON.stringify(o,null,2)+"\n"; b.scrollTop=b.scrollHeight};
+const $=i=>document.getElementById(i);
 
-const ui=()=>{["key","save"].forEach(i=>$(i).disabled=!!st.k);$("clear").disabled=!st.k;$("start").disabled=!st.t||!st.k||st.run;$("stop").disabled=!st.run};
+const st={key:localStorage.getItem("TV_KEY")||"",stream:null,track:null,run:false,timer:null,hwZ:1,dig:1};
+const log=(m,o)=>{if(!$.verb.checked&&o)return;const box=$("log");box.value+=`[${new Date().toLocaleTimeString()}] ${m}\n`;if(o)box.value+=JSON.stringify(o,null,2)+"\n";box.scrollTop=box.scrollHeight};
 
-async function listCams(){
+const ui=()=>{["key","save"].forEach(i=>$(i).disabled=!!st.key);$("clear").disabled=!st.key;$("start").disabled=!st.track||!st.key||st.run;$("stop").disabled=!st.run};
+
+async function enumerate(){
   const dev=await navigator.mediaDevices.enumerateDevices();
   const cams=dev.filter(d=>d.kind==="videoinput");
-  $("cam").innerHTML="";
-  cams.forEach(c=>{const o=document.createElement("option");o.value=c.deviceId;o.textContent=c.label||"camera";$("cam").appendChild(o)});
-  if(cams.length){$("cam").hidden=false;$("cam").onchange=initCam;}
+  $("cams").innerHTML="";
+  cams.forEach(c=>{const o=document.createElement("option");o.value=c.deviceId;o.textContent=c.label||"camera";$("cams").appendChild(o)});
+  if(cams.length){$("cams").hidden=false;$("cams").onchange=initCam;}
 }
 
 async function initCam(){
-  st.s?.getTracks().forEach(t=>t.stop());
-  const id=$("cam").value||undefined;
-  st.s=await navigator.mediaDevices.getUserMedia({
-    video:{ ...(id?{deviceId:{exact:id}}:{facingMode:"environment"}),
-            width:{ideal:1024}, panTiltZoom:true }});
-  st.t=st.s.getVideoTracks()[0];
-  $("view").srcObject=st.s;
-  add("Lens ready",{label:st.t.label});
-  initControls();
+  st.stream?.getTracks().forEach(t=>t.stop());
+  const id=$("cams").value||undefined;
+  st.stream=await navigator.mediaDevices.getUserMedia({
+    video:{...(id?{deviceId:{exact:id}}:{facingMode:"environment"}),width:{ideal:1024},panTiltZoom:true}});
+  st.track=st.stream.getVideoTracks()[0];
+  $("view").srcObject=st.stream;
+  log("Lens ready",{label:st.track.label});
+  initSliders();
   ui();
 }
 
-function initControls(){
-  const c=st.t.getCapabilities(),s=st.t.getSettings();
-  st.hw=c.zoom?c.zoom.max:1;
-  $("zoom").min=1;$("zoom").max=Math.max(12,st.hw);
-  $("zoom").value=s.zoom||1;$("zO").textContent=$("zoom").value;
+function initSliders(){
+  const cap=st.track.getCapabilities(),set=st.track.getSettings();
+  /* ZOOM */
+  st.hwZ=cap.zoom?cap.zoom.max:1;
+  $("zoom").min=1;$("zoom").max=Math.max(12,st.hwZ);
+  $("zoom").value=set.zoom||1;$("zOut").textContent=$("zoom").value;
   $("zoom").oninput=e=>{
-    const v=+e.target.value; $("zO").textContent=v;
-    st.dig=v>st.hw? v/st.hw : 1;
-    if(v<=st.hw) st.t.applyConstraints({advanced:[{zoom:v}]});
+    const z=+e.target.value;$("zOut").textContent=z;
+    st.dig=z>st.hwZ?z/st.hwZ:1;
+    if(z<=st.hwZ) st.track.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
   };
 
-  if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){
+  /* FOCUS */
+  if(cap.focusMode&&cap.focusMode.includes("manual")&&cap.focusDistance){
     $("fWrap").hidden=false;
-    $("focus").min=c.focusDistance.min;$("focus").max=c.focusDistance.max;
-    $("focus").value=s.focusDistance||c.focusDistance.min;$("fO").textContent=$("focus").value;
+    $("focus").min=cap.focusDistance.min;$("focus").max=cap.focusDistance.max;
+    $("focus").value=set.focusDistance||cap.focusDistance.min;$("fOut").textContent=$("focus").value;
     $("focus").oninput=e=>{
-      const v=+e.target.value;$("fO").textContent=v;
-      st.t.applyConstraints({advanced:[{focusMode:"manual",focusDistance:v}]});
+      const v=+e.target.value;$("fOut").textContent=v;
+      st.track.applyConstraints({advanced:[{focusMode:"manual"}]}).then(
+        ()=>st.track.applyConstraints({advanced:[{focusDistance:v}]})
+      ).catch(()=>{});
     };
-  } else $("fWrap").hidden=true;
+  }else{$("fWrap").hidden=true}
 }
 
-function schedule(){clearTimeout(st.timer); if(st.run) st.timer=setTimeout(capture,3500);}
+function plan(){clearTimeout(st.timer);if(st.run)st.timer=setTimeout(capture,3500);}
 
-function snap(v){
-  const p=v.videoWidth<v.videoHeight,w=v.videoWidth,h=v.videoHeight,d=st.dig,
-        cw=p?h/d:w/d, ch=p?w/d:h/d, can=document.createElement("canvas");
-  can.width=p?h:w; can.height=p?w:h;
-  const ctx=can.getContext("2d"); ctx.save();
-  if(p){ctx.translate(can.width/2,can.height/2);ctx.rotate(Math.PI/2);ctx.translate(-can.height/2,-can.width/2);}
-  ctx.drawImage(v,w/2-cw/2,h/2-ch/2,cw,ch,0,0,can.width,can.height); ctx.restore();
-  return can.toDataURL("image/jpeg",.85);
+function canvasImage(v){
+  const p=v.videoWidth<v.videoHeight,w=v.videoWidth,h=v.videoHeight,d=st.dig;
+  const cw=p?h/d:w/d, ch=p?w/d:h/d, ca=document.createElement("canvas");
+  ca.width=p?h:w; ca.height=p?w:h;
+  const ctx=ca.getContext("2d"); ctx.save();
+  if(p){ctx.translate(ca.width/2,ca.height/2);ctx.rotate(Math.PI/2);ctx.translate(-ca.height/2,-ca.width/2);}
+  ctx.drawImage(v,w/2-cw/2,h/2-ch/2,cw,ch,0,0,ca.width,ca.height); ctx.restore();
+  return ca.toDataURL("image/jpeg",.85);
 }
 
-async function callOpenAI(b64){
+async function solve(img){
   const body={model:"o4-mini",reasoning_effort:"high",max_completion_tokens:768,
     messages:[{role:"user",content:[
       {type:"text",text:"Solve the math problem in the image. Think step by step and return ONLY the numeric answer on the last line."},
-      {type:"image_url",image_url:{url:b64,detail:"high"}}]}]};
-  if($.verb.checked) add("Payload",body); else add("Payload");
-  let res;
-  try{res=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${st.k}`},body:JSON.stringify(body)});}
-  catch(e){throw Error("network "+e.message);}
+      {type:"image_url",image_url:{url:img,detail:"high"}}]}]};
+  $.verb.checked?log("Payload",body):log("Payload");
+  const res=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${st.key}`},body:JSON.stringify(body)}).catch(e=>{throw Error("network "+e.message)});
   if(!res.ok){
-    if(res.status===429){const wait=parseInt(res.headers.get("retry-after")||2);add("429, wait "+wait+"s");await new Promise(r=>setTimeout(r,wait*1000));return callOpenAI(b64);}
+    if(res.status===429){
+      const wait=parseInt(res.headers.get("retry-after")||2);log("429 wait "+wait+"s");await new Promise(rs=>setTimeout(rs,wait*1000));return solve(img);}
     throw Error("HTTP "+res.status);}
-  const txt=await res.text(); if($.verb.checked) add("HTTP 200",txt.slice(0,200)); else add("HTTP 200");
-  const content=JSON.parse(txt).choices?.[0]?.message?.content?.trim()||"",
-        ans=content.split(/\n/).pop().trim();
-  if(!/^\d/.test(ans)) throw Error("bad answer");
-  return ans;
+  const txt=await res.text();$.verb.checked?log("HTTP 200",txt.slice(0,200)):log("HTTP 200");
+  const full=JSON.parse(txt).choices?.[0]?.message?.content?.trim()||"",ans=full.split(/\n/).pop().trim();
+  if(!/^\d/.test(ans)) throw Error("bad answer");return ans;
 }
 
 async function capture(){
-  const v=$("view"); if(!v.videoWidth){schedule();return;}
-  try{const ans=await callOpenAI(snap(v)); add("✓ "+ans); try{speechSynthesis.speak(new SpeechSynthesisUtterance(ans))}catch{}}
-  catch(e){add("✗ "+e.message);}
-  schedule();
+  const v=$("view");if(!v.videoWidth){plan();return}
+  try{const ans=await solve(canvasImage(v));log("✓ "+ans);try{speechSynthesis.speak(new SpeechSynthesisUtterance(ans))}catch{}}
+  catch(e){log("✗ "+e.message)}
+  plan();
 }
 
 /* BUTTONS */
-$("save").onclick=()=>{st.k=$("key").value.trim(); if(!st.k) return;
-  localStorage.setItem("TV_KEY",st.k); $("key").value="••••••••"; listCams().then(initCam); ui(); };
-$("clear").onclick=()=>{localStorage.removeItem("TV_KEY"); st.k=""; $("key").value=""; st.s?.getTracks().forEach(t=>t.stop()); st.t=null; ui();}
-$("start").onclick=()=>{if(st.t&&st.k){st.run=true; capture(); ui();}}
-$("stop").onclick =()=>{st.run=false; schedule(); ui(); }
-$("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("log").value); add("Copied")}
-  catch{const l=$("log"); l.select(); document.execCommand("copy"); add("Copy (fallback)") }};
+$("save").onclick=()=>{st.key=$("key").value.trim();if(!st.key)return;localStorage.setItem("TV_KEY",st.key);$("key").value="••••••••";enumerate().then(initCam);ui();};
+$("clear").onclick=()=>{localStorage.removeItem("TV_KEY");st.key="";$("key").value="";st.stream?.getTracks().forEach(t=>t.stop());st.track=null;ui()};
+$("start").onclick=()=>{if(st.track&&st.key){st.run=true;capture();ui()}};
+$("stop").onclick=()=>{st.run=false;plan();ui()};
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("log").value);log("Copied")}catch{const t=$("log");t.select();document.execCommand("copy");log("Copy fallback")}};
 
 /* INIT */
-if(st.k){$("key").value="••••••••"; listCams().then(initCam) } ui();
+if(st.key){$("key").value="••••••••";enumerate().then(initCam)}
+ui();
 
 })();
 </script>
