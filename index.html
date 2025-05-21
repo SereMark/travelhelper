@@ -521,24 +521,21 @@ const captureImage = () => {
 const solveMathProblem = async (imageDataUrl) => {
   if (!AppState.apiKey) throw new Error("API Key is missing.");
 
-  logger.log("Sending image to OpenAI (o4-mini, medium effort)…", {
-    imageSizeKB: Math.round(imageDataUrl.length / 1024)
-  });
-
   const rlQuizPrompt = `You are an AI expert in Reinforcement Learning.
 Read the MCQ in the image and reply ONLY with the letter/number
-of the correct option (comma-separated if multiple).
-If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ`;
+of the correct option (comma-separated if multiple). 
+If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ
+Limit your entire answer to ≤10 tokens.`;
 
   const payload = {
     model: "o4-mini",
     reasoning_effort: "medium",
-    max_completion_tokens: 600,
+    max_completion_tokens: 500,
     messages: [
       {
         role: "user",
         content: [
-          { type: "text", text: rlQuizPrompt },
+          { type: "text",  text: rlQuizPrompt },
           { type: "image_url",
             image_url: { url: imageDataUrl, detail: "auto" } }
         ]
@@ -546,17 +543,14 @@ If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ`;
     ]
   };
 
-  const res = await fetch(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${AppState.apiKey}`
-      },
-      body: JSON.stringify(payload)
-    }
-  );
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${AppState.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({
@@ -569,7 +563,6 @@ If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ`;
   logger.log("OpenAI usage:", data.usage);
 
   const answer = (data.choices?.[0]?.message?.content || "").trim();
-
   if (answer === "UNREADABLE_OR_NO_MCQ") {
     return { extractedAnswer: null, statusMessage: answer };
   }
