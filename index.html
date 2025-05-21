@@ -534,12 +534,11 @@ If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ`;
     model: "o4-mini",
     reasoning_effort: "high",
     max_completion_tokens: 450,
-    max_reasoning_tokens: 300,
     messages: [
       {
         role: "user",
         content: [
-          { type: "text",  text: rlQuizPrompt },
+          { type: "text", text: rlQuizPrompt },
           { type: "image_url",
             image_url: { url: imageDataUrl, detail: "auto" } }
         ]
