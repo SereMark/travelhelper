@@ -519,28 +519,26 @@ const captureImage = () => {
 };
 
 const solveMathProblem = async (imageDataUrl) => {
-  if (!AppState.apiKey) throw new Error("API Key is missing.");
+  if (!AppState.apiKey) throw new Error("API Key missing.");
 
-  const rlQuizPrompt = `You are an AI expert in Reinforcement Learning.
-Read the MCQ in the image and reply ONLY with the letter/number
-of the correct option (comma-separated if multiple). 
-If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ
-Limit your entire answer to ≤10 tokens.`;
+  const prompt = `You are an AI expert in Reinforcement Learning.
+Read the MCQ in the image and determine the correct option identifier(s).
+Respond on the FIRST line only, with the letter/number (comma-separated if several),
+then write the token END and STOP. Do NOT write anything else before END.
+If unreadable or no MCQ, reply exactly: UNREADABLE_OR_NO_MCQ and END`;
 
   const payload = {
     model: "o4-mini",
-    reasoning_effort: "medium",
-    max_completion_tokens: 500,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text",  text: rlQuizPrompt },
-          { type: "image_url",
-            image_url: { url: imageDataUrl, detail: "auto" } }
-        ]
-      }
-    ]
+    reasoning_effort: "high",
+    max_completion_tokens: 4096,
+    stop: [" END"],
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: imageDataUrl, detail: "auto" } }
+      ]
+    }]
   };
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -553,29 +551,24 @@ Limit your entire answer to ≤10 tokens.`;
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({
-      error: { message: `HTTP ${res.status}` }
-    }));
+    const err = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` }}));
     throw new Error(`OpenAI API Error: ${err.error?.message || res.status}`);
   }
 
   const data = await res.json();
-  logger.log("OpenAI usage:", data.usage);
+  logger.log("o4-mini usage:", data.usage);
 
-  const answer = (data.choices?.[0]?.message?.content || "").trim();
-  if (answer === "UNREADABLE_OR_NO_MCQ") {
-    return { extractedAnswer: null, statusMessage: answer };
-  }
-  if (/^[A-Za-z0-9](,\s*[A-Za-z0-9])*$/.test(answer)) {
-    return {
-      extractedAnswer: answer.toUpperCase(),
-      statusMessage: `AI Answer: ${answer.toUpperCase()}`
-    };
-  }
-  return {
-    extractedAnswer: null,
-    statusMessage: "AI response format unexpected (see log)."
-  };
+  const raw = (data.choices?.[0]?.message?.content || "").split(" ")[0].trim();
+
+  if (raw === "UNREADABLE_OR_NO_MCQ")
+    return { extractedAnswer: null, statusMessage: raw };
+
+  if (/^[A-Za-z0-9](,\s*[A-Za-z0-9])*$/.test(raw))
+    return { extractedAnswer: raw.toUpperCase(),
+             statusMessage: `AI Answer: ${raw.toUpperCase()}` };
+
+  return { extractedAnswer: null,
+           statusMessage: "AI response format unexpected (see log)." };
 };
 
 const processFrame = async () => {
