@@ -81,16 +81,15 @@ output { font-weight: 500; margin-left: 0.2rem; font-feature-settings: "tnum"; f
 }
 .frame {
     width: 100%;
-    /* Enforce 3:4 Aspect Ratio for the frame */
     aspect-ratio: 3 / 4;
-    max-height: 100%; /* Ensure it doesn't overflow its parent in preview-area */
-    max-width: calc(100vh * 0.75); /* Limit width based on height for 3:4 if height is constraining */
-    margin: auto; /* Center the frame if it's not taking full width/height of preview-area */
+    max-height: 100%; 
+    max-width: calc(100vh * 0.75); 
+    margin: auto; 
     border-radius: 6px; overflow: hidden; background: #000; position: relative; box-shadow: 0 0 6px var(--shadow-color);
 }
 video {
     width: 100%; height: 100%;
-    object-fit: cover; /* Cover the 3:4 frame, cropping if necessary */
+    object-fit: cover; 
     display: block; background: #050505;
 }
 
@@ -188,8 +187,8 @@ video {
         </div>
 
         <div class="preview-area">
-            <div class="frame"> {/* This frame will be 3:4 */}
-                <video id="videoPreview" autoplay muted playsinline></video> {/* This video will cover the frame */}
+            <div class="frame">
+                <video id="videoPreview" autoplay muted playsinline></video>
                 <div id="videoSpinnerOverlay" class="video-spinner-overlay">
                     <div id="spinnerIcon" class="spinner"></div>
                 </div>
@@ -234,10 +233,9 @@ const AppState = {
     currentZoom: 1,
     toastTimeout: null,
     isLogVisible: false,
-    toneStarted: false, // Flag to track if Tone.js has been started
+    toneStarted: false,
 };
 
-// --- Tone.js Sound Definitions ---
 let sounds = {
     initSuccess: null,
     startAnalysis: null,
@@ -248,61 +246,49 @@ let sounds = {
 function initializeSounds() {
     if (typeof Tone !== 'undefined') {
         sounds.initSuccess = new Tone.PolySynth(Tone.Synth, {
-            polyphony: 3,
-            volume: -12, // Quieter
+            polyphony: 3, volume: -12,
             envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.3 },
             oscillator: { type: "sine" }
         }).toDestination();
-
         sounds.startAnalysis = new Tone.AMSynth({
-            volume: -15,
-            harmonicity: 1.2,
-            detune: 0,
+            volume: -15, harmonicity: 1.2, detune: 0,
             oscillator: { type: "fmsine", modulationType: "sine", modulationIndex: 2, harmonicity: 1.01 },
             envelope: { attack: 0.01, decay: 0.1, sustain: 0.01, release: 0.1 },
             modulation: { type: "sine" },
             modulationEnvelope: { attack: 0.05, decay: 0.01, sustain: 1, release: 0.05 }
         }).toDestination();
-        
-        sounds.aiResponse = new Tone.Synth({ // Simple ping for AI response
-            volume: -10,
-            oscillator: { type: "triangle" },
+        sounds.aiResponse = new Tone.Synth({
+            volume: -10, oscillator: { type: "triangle" },
             envelope: { attack: 0.005, decay: 0.1, sustain: 0.01, release: 0.1 }
         }).toDestination();
-
         sounds.error = new Tone.NoiseSynth({
-            volume: -18,
-            noise: { type: 'brown' },
+            volume: -18, noise: { type: 'brown' },
             envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.1 }
         }).toDestination();
-        logger.log("Tone.js sounds initialized (definitions set).");
+        // This log is for developers, not users.
+        console.log("[DEBUG] Tone.js sounds initialized (definitions set).");
     } else {
-        logger.error("Tone.js library not loaded. Audio feedback disabled.");
+        console.error("[DEBUG] Tone.js library not loaded. Audio feedback disabled.");
     }
 }
-// Call initializeSounds once Tone.js is confirmed loaded (usually it is by the time script runs)
 if (typeof Tone !== 'undefined') {
     initializeSounds();
 }
 
-
 async function startTone() {
     if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
         try {
-            await Tone.start();
-            AppState.toneStarted = true;
-            logger.log("Tone.js audio context started successfully by user interaction.");
-        } catch (e) {
-            logger.error("Error starting Tone.js audio context.", e);
-        }
+            await Tone.start(); AppState.toneStarted = true;
+            logger.log("Audio context started.");
+        } catch (e) { logger.error("Error starting audio context.", e); }
     } else if (typeof Tone !== 'undefined' && Tone.context.state === 'running') {
-        AppState.toneStarted = true; // Already running
+        AppState.toneStarted = true;
     }
 }
 
-function playSound(soundName, noteOrDuration, timeOffset = 0) {
+function playSound(soundName) {
     if (AppState.toneStarted && sounds[soundName]) {
-        const now = Tone.now() + timeOffset;
+        const now = Tone.now();
         if (soundName === 'initSuccess' && sounds.initSuccess.triggerAttackRelease) {
             sounds.initSuccess.triggerAttackRelease(["C5", "E5", "G5"], "16n", now);
         } else if (soundName === 'startAnalysis' && sounds.startAnalysis.triggerAttackRelease) {
@@ -314,12 +300,9 @@ function playSound(soundName, noteOrDuration, timeOffset = 0) {
             sounds.error.triggerAttackRelease("8n", now);
         }
     } else if (!AppState.toneStarted) {
-        logger.log(`Sound '${soundName}' skipped: Tone.js not started by user action yet.`);
-    } else if (!sounds[soundName]) {
-        logger.log(`Sound '${soundName}' skipped: not defined.`);
+        logger.log(`Sound '${soundName}' skipped: audio context not started.`);
     }
 }
-
 
 const logger = {
     _logToTextarea: (message, details) => {
@@ -369,13 +352,12 @@ const updateStatus = (message, type = 'info', showSpinnerOnVideo = false) => {
         criticalOverlay.classList.remove('visible');
     }
 
-    if (message !== null) { // Allow clearing status by passing null
+    if (message !== null) {
         statusBar.innerHTML = message;
         statusBar.className = 'status-bar'; 
         if (type === 'error') statusBar.classList.add('error');
         else if (type === 'success') statusBar.classList.add('success');
     }
-
 
     videoSpinnerOverlay.classList.toggle('visible', showSpinnerOnVideo);
     
@@ -386,7 +368,6 @@ const updateStatus = (message, type = 'info', showSpinnerOnVideo = false) => {
         if(statusBar) statusBar.innerHTML = ''; 
     }
 };
-
 
 const updateUI = () => {
     const keyPresent = !!AppState.apiKey;
@@ -411,15 +392,15 @@ const updateUI = () => {
     $('toggleLogBtn').textContent = AppState.isLogVisible ? 'Hide Log' : 'Log';
 
     if (AppState.isInitializingCamera) {
-        // updateStatus called by listCameras/initCamera
+        // Status is set by the function initiating camera initialization
     } else if (!keyPresent) {
-        // updateStatus called by DOMContentLoaded
+        // Initial API key prompt is handled by DOMContentLoaded
         $('apiKeyEntryRow').classList.remove('hidden-control');
         $('apiKeyDisplayRow').classList.add('hidden-control');
     } else if (!AppState.videoTrack) {
-        // Status set by listCameras/initCamera if they fail
+        // Status like "Camera not available" set by listCameras/initCamera if they fail
     } else if (AppState.isProcessing) {
-        // Status set by processFrame
+        // "Capturing", "Analyzing" set by processFrame
     } else if (cameraIsActuallyReady) {
         const currentStatus = $('statusBar').textContent;
         if (currentStatus === 'Initializing app...' || currentStatus === '' || currentStatus.includes("Initializing camera") || currentStatus.includes("Stopped") || currentStatus.includes("API Key cleared") || currentStatus.includes("Welcome!")) {
@@ -448,14 +429,14 @@ const _initCameraWork = async (deviceId) => {
         height: { ideal: 1080, max: 1440 }, 
         frameRate: { ideal: 24, max: 30 }, 
         facingMode: "environment", 
-        aspectRatio: {ideal: 3/4}, // Request 3:4 aspect ratio
+        aspectRatio: {ideal: 3/4},
         audio: false 
     }};
     if(deviceId){constraints.video.deviceId={exact:deviceId};delete constraints.video.facingMode;}
     logger.log(`Attempting camera: ${deviceId||'default'}`, constraints.video);
     AppState.mediaStream = await promiseWithTimeout(navigator.mediaDevices.getUserMedia(constraints),10000,"Camera access request timed out. Please respond to any permission prompts.");
     const tracks = AppState.mediaStream.getVideoTracks(); if(tracks.length===0)throw new Error("No video tracks found in stream."); AppState.videoTrack=tracks[0];
-    logger.log(`Video track acquired: ${AppState.videoTrack.label}. Actual settings: ${JSON.stringify(AppState.videoTrack.getSettings(), null, 2)}`);
+    logger.log(`Video track acquired: ${AppState.videoTrack.label}. Settings: ${JSON.stringify(AppState.videoTrack.getSettings(), null, 2)}`);
     const vidEl=$('videoPreview'); vidEl.srcObject=AppState.mediaStream;
     await promiseWithTimeout(new Promise((res,rej)=>{const ol=()=>{vidEl.onloadedmetadata=null;vidEl.onerror=null;res();};const oe=()=>{vidEl.onloadedmetadata=null;vidEl.onerror=null;rej(new Error("Video element failed to load stream."));};vidEl.onloadedmetadata=ol;vidEl.onerror=oe;}),5000,"Video stream metadata loading timed out.");
     logger.success(`Camera active: ${AppState.videoTrack.label||'N/A'}`);
@@ -509,65 +490,25 @@ const captureImage = () => {
     if (!videoEl.videoWidth || !AppState.videoTrack || AppState.isInitializingCamera) {
         logger.error("Video not ready for capture."); return null;
     }
-
-    // --- New Aspect Ratio Corrected Capture for object-fit: cover ---
-    const videoIntrinsicWidth = videoEl.videoWidth;
-    const videoIntrinsicHeight = videoEl.videoHeight;
-    const frameWidth = videoEl.offsetWidth; // Actual display width of the 3:4 video element
-    const frameHeight = videoEl.offsetHeight; // Actual display height
-
-    const videoAR = videoIntrinsicWidth / videoIntrinsicHeight;
-    const frameAR = frameWidth / frameHeight; // Should be close to 3/4
-
+    const videoIntrinsicWidth = videoEl.videoWidth; const videoIntrinsicHeight = videoEl.videoHeight;
+    const frameWidth = videoEl.offsetWidth; const frameHeight = videoEl.offsetHeight;
+    const videoAR = videoIntrinsicWidth / videoIntrinsicHeight; const frameAR = frameWidth / frameHeight;
     let sx = 0, sy = 0, sWidth = videoIntrinsicWidth, sHeight = videoIntrinsicHeight;
-
-    if (videoAR > frameAR) { // Video is wider than frame (e.g., 16:9 in 3:4), so it's pillarboxed by 'cover' logic
-        sWidth = videoIntrinsicHeight * frameAR; // Crop width to match frame aspect ratio
-        sx = (videoIntrinsicWidth - sWidth) / 2;
-    } else if (videoAR < frameAR) { // Video is taller than frame (e.g., 9:16 in 3:4), so it's letterboxed by 'cover' logic
-        sHeight = videoIntrinsicWidth / frameAR; // Crop height
-        sy = (videoIntrinsicHeight - sHeight) / 2;
-    }
-    // If aspect ratios match, sx, sy will be 0 and sWidth/sHeight will be full intrinsic.
-
-    const sourceCanvas = document.createElement('canvas');
-    // The source canvas should get the cropped portion at its native resolution
-    sourceCanvas.width = sWidth;
-    sourceCanvas.height = sHeight;
-    const ctxS = sourceCanvas.getContext('2d');
-    ctxS.drawImage(videoEl, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
-
-    // --- Digital Zoom (applied to the correctly cropped 3:4 content) ---
+    if (videoAR > frameAR) { sWidth = videoIntrinsicHeight * frameAR; sx = (videoIntrinsicWidth - sWidth) / 2; } 
+    else if (videoAR < frameAR) { sHeight = videoIntrinsicWidth / frameAR; sy = (videoIntrinsicHeight - sHeight) / 2; }
+    const sourceCanvas = document.createElement('canvas'); sourceCanvas.width = sWidth; sourceCanvas.height = sHeight;
+    const ctxS = sourceCanvas.getContext('2d'); ctxS.drawImage(videoEl, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
     let effDigZoom = 1;
     if (AppState.cameraCapabilities.zoom && AppState.currentZoom > AppState.cameraCapabilities.zoom.max) effDigZoom = AppState.currentZoom / AppState.cameraCapabilities.zoom.max;
     else if (!AppState.cameraCapabilities.zoom && AppState.currentZoom > 1) effDigZoom = AppState.currentZoom;
-    
-    const zoomedWidth = sWidth / effDigZoom;
-    const zoomedHeight = sHeight / effDigZoom;
-    const zoomedSx = (sWidth - zoomedWidth) / 2;
-    const zoomedSy = (sHeight - zoomedHeight) / 2;
-
-    const digitallyZoomedCanvas = document.createElement('canvas');
-    digitallyZoomedCanvas.width = zoomedWidth;
-    digitallyZoomedCanvas.height = zoomedHeight;
-    const ctxDZ = digitallyZoomedCanvas.getContext('2d');
-    ctxDZ.drawImage(sourceCanvas, zoomedSx, zoomedSy, zoomedWidth, zoomedHeight, 0, 0, zoomedWidth, zoomedHeight);
-
-
-    // --- Downscale for OpenAI ---
-    const MAX_DIMENSION = 1024;
-    let tW = digitallyZoomedCanvas.width, tH = digitallyZoomedCanvas.height;
-    if (tW > MAX_DIMENSION || tH > MAX_DIMENSION) {
-        // Maintain the (now correct 3:4 or cropped) aspect ratio
-        const currentAR = tW / tH;
-        if (tW > tH) { tW = MAX_DIMENSION; tH = Math.round(tW / currentAR); }
-        else { tH = MAX_DIMENSION; tW = Math.round(tH * currentAR); }
-    }
-
+    const zoomedWidth = sWidth / effDigZoom; const zoomedHeight = sHeight / effDigZoom;
+    const zoomedSx = (sWidth - zoomedWidth) / 2; const zoomedSy = (sHeight - zoomedHeight) / 2;
+    const digitallyZoomedCanvas = document.createElement('canvas'); digitallyZoomedCanvas.width = zoomedWidth; digitallyZoomedCanvas.height = zoomedHeight;
+    const ctxDZ = digitallyZoomedCanvas.getContext('2d'); ctxDZ.drawImage(sourceCanvas, zoomedSx, zoomedSy, zoomedWidth, zoomedHeight, 0, 0, zoomedWidth, zoomedHeight);
+    const MAX_DIMENSION = 1024; let tW = digitallyZoomedCanvas.width, tH = digitallyZoomedCanvas.height;
+    if (tW > MAX_DIMENSION || tH > MAX_DIMENSION) { const currentAR = tW / tH; if (tW > tH) { tW = MAX_DIMENSION; tH = Math.round(tW / currentAR); } else { tH = MAX_DIMENSION; tW = Math.round(tH * currentAR); } }
     const finalCanvas = document.createElement('canvas'); finalCanvas.width = tW; finalCanvas.height = tH;
-    const ctxF = finalCanvas.getContext('2d');
-    ctxF.drawImage(digitallyZoomedCanvas, 0, 0, digitallyZoomedCanvas.width, digitallyZoomedCanvas.height, 0, 0, tW, tH);
-    
+    const ctxF = finalCanvas.getContext('2d'); ctxF.drawImage(digitallyZoomedCanvas, 0, 0, digitallyZoomedCanvas.width, digitallyZoomedCanvas.height, 0, 0, tW, tH);
     const imageDataUrl = finalCanvas.toDataURL('image/jpeg', 0.85);
     logger.log(`Image captured (sent: ${tW}x${tH}, size: ${Math.round(imageDataUrl.length/1024)}KB).`,
                {originalStream: `${videoIntrinsicWidth}x${videoIntrinsicHeight}`, visibleCrop: `${Math.round(sWidth)}x${Math.round(sHeight)}`, digitalZoomFactor: effDigZoom.toFixed(2)});
@@ -600,27 +541,18 @@ Be comprehensive in your explanation. Structure your response clearly.`;
     const result=await response.json(); logger.log("OpenAI response received (gpt-4o).",result.usage);
     const fullText=result.choices?.[0]?.message?.content?.trim() || "No content received from AI.";
     
-    let numericAnswer = null;
-    let textualFinalAnswer = null;
-    const lines = fullText.split('\n');
+    let numericAnswer = null; let textualFinalAnswer = null; const lines = fullText.split('\n');
     const finalAnswerLine = lines.find(line => line.startsWith("Final Answer:"));
-
     if (finalAnswerLine) {
         const answerContent = finalAnswerLine.substring("Final Answer:".length).trim();
-        if (/^\-?\d+(\.\d+)?$/.test(answerContent)) { // Check if it's purely numeric
-            numericAnswer = answerContent;
-        } else {
-            textualFinalAnswer = answerContent;
-        }
+        if (/^\-?\d+(\.\d+)?$/.test(answerContent)) { numericAnswer = answerContent; } 
+        else { textualFinalAnswer = answerContent; }
     }
-    
     const lowerContent = fullText.toLowerCase();
     if (lowerContent.includes("no clear problem detected")) return { fullText, numericAnswer: null, textualFinalAnswer: null, statusMessage: "AI: No clear math problem detected." };
     if (lowerContent.includes("image is unreadable")) return { fullText, numericAnswer: null, textualFinalAnswer: null, statusMessage: "AI: Image is unreadable." };
-    
     if (numericAnswer) return { fullText, numericAnswer, textualFinalAnswer: null, statusMessage: `Solved: ${numericAnswer}` };
     if (textualFinalAnswer) return { fullText, numericAnswer: null, textualFinalAnswer, statusMessage: `AI Answer: ${textualFinalAnswer}` };
-    
     return { fullText, numericAnswer: null, textualFinalAnswer: null, statusMessage: "AI response received (see log)." };
 };
 
@@ -629,14 +561,11 @@ const processFrame = async () => {
     updateStatus("Capturing...", 'info', true); const imgData=captureImage();
     if(!imgData){logger.error("Image capture failed for processing.");if(AppState.isProcessing)AppState.captureTimeout=setTimeout(processFrame,3500);updateStatus("Capture failed.",'error');updateUI();return;}
     try{
-        playSound('aiResponse'); // Sound cue that AI is working
+        playSound('aiResponse'); 
         updateStatus("Analyzing with AI (gpt-4o)...", 'info', true);
         const{fullText,numericAnswer,textualFinalAnswer,statusMessage}=await solveMathProblem(imgData);
-        
-        logger.log(`AI Raw Status: ${statusMessage}`, { verboseFullText: $('verboseLogCheck').checked ? fullText : "Verbose off" });
-
+        logger.log(`AI Raw Status: ${statusMessage}`, { verboseFullText: $('verboseLogCheck').checked ? fullText : "Verbose logging off" });
         let spokenAnswer = null;
-
         if(numericAnswer){
             logger.success(`Extracted Numeric Solution: ${numericAnswer}`); 
             updateStatus(`Answer: ${numericAnswer}`,'success');
@@ -645,33 +574,27 @@ const processFrame = async () => {
         } else if (textualFinalAnswer) {
             logger.log(`AI Textual Answer: ${textualFinalAnswer}`);
             const displayMsg = `AI: ${textualFinalAnswer.substring(0,50)}${textualFinalAnswer.length > 50 ? '...' : ''}`;
-            updateStatus(displayMsg, 'info');
-            showToast(displayMsg, 'info', 4000);
-            if (textualFinalAnswer.length < 70) spokenAnswer = textualFinalAnswer; // Speak shorter textual answers
+            updateStatus(displayMsg, 'info'); showToast(displayMsg, 'info', 4000);
+            if (textualFinalAnswer.length < 70) spokenAnswer = textualFinalAnswer;
         } else { 
             logger.log(statusMessage||"AI provided no numeric/textual final answer."); 
             updateStatus(statusMessage.length > 60 ? statusMessage.substring(0, 57) + "..." : statusMessage,'info');
             showToast(statusMessage.length > 40 ? statusMessage.substring(0, 37) + "..." : statusMessage,'info',4000);
         }
-
         if (spokenAnswer) {
             try {
-                speechSynthesis.cancel(); // Cancel any previous speech
+                speechSynthesis.cancel(); 
                 const utterance1 = new SpeechSynthesisUtterance(spokenAnswer);
                 speechSynthesis.speak(utterance1);
-                // Repeat shorter answers
-                if (spokenAnswer.length < 30) { // Adjust length threshold as needed
-                    utterance1.onend = () => {
-                        setTimeout(() => {
-                            if (!AppState.isProcessing) return; // Don't speak if stopped
-                            const utterance2 = new SpeechSynthesisUtterance("Again, " + spokenAnswer);
-                            speechSynthesis.speak(utterance2);
-                        }, 750);
-                    };
+                if (spokenAnswer.length < 30 && !isNaN(parseFloat(spokenAnswer))) { // Only repeat numbers for now
+                    utterance1.onend = () => { setTimeout(() => {
+                        if (!AppState.isProcessing) return;
+                        const utterance2 = new SpeechSynthesisUtterance("Again, " + spokenAnswer);
+                        speechSynthesis.speak(utterance2);
+                    }, 750);};
                 }
             } catch(e) { logger.error("Speech synthesis failed.", e); }
         }
-
     }catch(err){
         logger.error(`Processing error: ${err.message}`,err);
         const isAPIKeyError = err.message.includes("API Key");
@@ -680,8 +603,8 @@ const processFrame = async () => {
     }finally{
         if(AppState.isProcessing){
             if (AppState.videoTrack && !AppState.isInitializingCamera) { updateStatus("Ready for next. Aim.", 'info', false); }
-            AppState.captureTimeout=setTimeout(processFrame,4500); // Time for next capture
-        }else{ updateUI(); } // Ensure UI is correct if stopped
+            AppState.captureTimeout=setTimeout(processFrame,4500);
+        }else{ updateUI(); }
     }
 };
 
@@ -691,12 +614,7 @@ const updateZoomTypeIndicator = () => {
 };
 const toggleLogPanel = () => { AppState.isLogVisible=!AppState.isLogVisible; $('logPanel').classList.toggle('visible',AppState.isLogVisible); updateUI(); };
 
-// --- Event Listeners ---
-async function handleUserInteractionForAudio() {
-    if (!AppState.toneStarted) {
-        await startTone();
-    }
-}
+async function handleUserInteractionForAudio() { if (!AppState.toneStarted) { await startTone(); } }
 
 $('saveKeyBtn').onclick= async ()=>{ await handleUserInteractionForAudio(); if(AppState.isInitializingCamera||AppState.isProcessing)return;const kI=$('apiKey').value.trim();if(kI.startsWith("sk-")){AppState.apiKey=kI;try{localStorage.setItem("TV_API_KEY",kI);}catch(e){logger.error("localStorage error (save key).",e);}logger.success("API Key Saved!");if(!AppState.videoTrack && !AppState.isInitializingCamera){listCameras();}updateUI();}else{logger.error("Invalid API Key format. Must start with 'sk-'.");}};
 $('changeKeyBtn').onclick=async ()=>{ await handleUserInteractionForAudio(); if(AppState.isInitializingCamera||AppState.isProcessing)return;$('apiKeyEntryRow').classList.remove('hidden-control');$('apiKeyDisplayRow').classList.add('hidden-control');$('apiKey').value=AppState.apiKey;$('apiKey').focus();updateUI();};
@@ -712,14 +630,14 @@ $('toggleLogBtn').onclick = async () => { await handleUserInteractionForAudio();
 document.addEventListener('DOMContentLoaded',()=>{
     updateStatus("Initializing app...", 'info');
     try{AppState.apiKey=localStorage.getItem("TV_API_KEY")||"";}catch(e){logger.error("localStorage error (load key).",e);AppState.apiKey="";}
-    try{$('verboseLogCheck').checked=localStorage.getItem("TV_VERBOSE_LOG")==='true';}catch(e){logger.error("localStorage error (load verbose).",e);}
+    try{$('verboseLogCheck').checked=localStorage.getItem("TV_VERBOSE_LOG")==='true';}catch(e){logger.error("localStorage error (load verbose).",e);} // Corrected key
     if(AppState.apiKey){ listCameras(); } 
     else { updateStatus("Welcome!<br>Please enter OpenAI API Key to begin.", 'info'); }
     updateUI();
 });
 document.addEventListener("visibilitychange",()=>{
     if(document.visibilityState==='hidden'){
-        if(AppState.isProcessing){$('stopBtn').click();} // Will also cancel speech
+        if(AppState.isProcessing){$('stopBtn').click();}
         if(AppState.videoTrack)releaseCamera(); updateUI();
     }else if(document.visibilityState==='visible'){
         if(AppState.apiKey && !AppState.videoTrack && !AppState.isInitializingCamera){
