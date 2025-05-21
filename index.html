@@ -3,153 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Traveler Vision · Math Mode</title>
+<title>Traveler Vision · Math Mode</title>
 <style>
 :root{--bg:#fff;--fg:#111;--accent:#4f46e5}
-@media(prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eee;--accent:#6366f1}}
+@media(prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--accent:#6366f1}}
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto}
 body{display:flex;flex-direction:column;height:100vh;gap:1rem;padding:1rem;background:var(--bg);color:var(--fg)}
 header{font:600 1.25rem/1 inherit;text-align:center}
-input,select,button{font:1rem/1 inherit;padding:.75rem;border-radius:6px;border:1px solid #ccc;background:var(--bg);color:var(--fg)}
+input,select,button{font:1rem/1 inherit;padding:.75rem;border-radius:8px;border:1px solid #ccc;background:var(--bg);color:var(--fg)}
 button{background:var(--accent);border:none;color:#fff}
 button:disabled{opacity:.5}
 .preview{width:100%;aspect-ratio:3/4}
 video{width:100%;height:100%;border-radius:8px;background:#000;object-fit:contain}
-#log{font-size:1rem;line-height:1.4;max-height:30vh;overflow:auto;background:rgba(0,0,0,.05);padding:.6rem;border-radius:6px}
-footer{display:flex;gap:.5rem}
-.control{display:flex;flex-direction:column;gap:.3rem;margin-top:.8rem}
-label{font-size:.85rem;opacity:.85}
+#log{font-size:1rem;line-height:1.4;max-height:35vh;overflow:auto;background:rgba(0,0,0,.05);padding:.7rem;border-radius:8px}
+footer{display:flex;gap:.75rem}
+.control{display:flex;flex-direction:column;gap:.35rem;margin-top:.9rem}
+label{font-size:.9rem;opacity:.85}
 </style>
 </head>
 <body>
-<header>Traveler Vision · Math Mode</header>
+<header>Traveler Vision · Math</header>
 <div id="auth">
   <input id="key" type="password" placeholder="OpenAI key">
-  <div style="display:flex;gap:.5rem;margin-top:.5rem">
-    <button id="save">Save</button>
-    <button id="clear" disabled>Clear</button>
-  </div>
+  <div style="display:flex;gap:.6rem;margin-top:.6rem"><button id="save">Save</button><button id="clear" disabled>Clear</button></div>
 </div>
-<select id="camSelect" hidden></select>
-<div id="controls" hidden>
-  <div class="control" id="zoomBlock" hidden>
-    <label>Zoom <output id="zVal">1</output>×</label>
-    <input type="range" id="zoom" step="0.1">
+<select id="cam" hidden></select>
+<div id="ctrls" hidden>
+  <div class="control" id="zBlk" hidden>
+    <label>Zoom <output id="zOut">1</output>×</label><input id="zoom" type="range" min="1" max="10" step="0.1">
   </div>
-  <div class="control" id="focusBlock" hidden>
-    <label>Focus <output id="fVal">auto</output></label>
-    <input type="range" id="focus" step="0.01">
+  <div class="control" id="fBlk" hidden>
+    <label>Focus <output id="fOut">auto</output></label><input id="focus" type="range" step="0.01">
   </div>
 </div>
 <div class="preview"><video id="view" autoplay muted playsinline></video></div>
-<pre id="log" title="double‑tap to expand"></pre>
-<footer>
-  <button id="start" disabled>Start</button>
-  <button id="stop"  disabled>Stop</button>
-</footer>
+<pre id="log" title="double‑tap to expand"></pre>
+<footer><button id="start" disabled>Start</button><button id="stop" disabled>Stop</button></footer>
 <script>
 (()=>{
 const $=id=>document.getElementById(id);
-const S={key:localStorage.getItem("TV_KEY")||"",stream:null,track:null,running:false,timer:null,zoomHWMax:1};
-const log=txt=>{$("log").textContent=`${new Date().toLocaleTimeString()} — ${txt}\n`+$("log").textContent};
-const ui=()=>{
-  $("key").disabled=!!S.key; $("save").disabled=!!S.key; $("clear").disabled=!S.key;
-  $("start").disabled=!S.track||!S.key||S.running; $("stop").disabled=!S.running;
-  $("camSelect").hidden=!S.track; $("controls").hidden=!S.track;
-};
-/* ---------- camera enumeration ---------- */
-const listCams=async()=>{
-  const dev=await navigator.mediaDevices.enumerateDevices();
-  const cams=dev.filter(d=>d.kind==="videoinput");
-  $("camSelect").innerHTML="";
-  cams.forEach(c=>{const o=document.createElement("option");o.value=c.deviceId;o.textContent=c.label||"Camera";$("camSelect").appendChild(o);});
-  $("camSelect").hidden=!cams.length; $("camSelect").onchange=startCam;
-};
-/* ---------- start selected camera ---------- */
-const startCam=async()=>{
-  if(S.stream) S.stream.getTracks().forEach(t=>t.stop());
-  const id=$("camSelect").value||undefined;
-  try{
-    S.stream=await navigator.mediaDevices.getUserMedia({video:id?{deviceId:{exact:id}}:{facingMode:"environment"}});
-    S.track=S.stream.getVideoTracks()[0]; $("view").srcObject=S.stream;
-    log(`Lens: ${S.track.label||""}`); setupPTZ();
-  }catch(e){log(`Camera error: ${e.message}`);} ui();
-};
-/* ---------- PTZ controls ---------- */
-const setupPTZ=()=>{
-  const cap=S.track.getCapabilities(); const set=S.track.getSettings();
-  /* zoom */
-  if(cap.zoom){
-    $("zoomBlock").hidden=false;
-    $("zoom").min=cap.zoom.min; $("zoom").max=Math.max(cap.zoom.max,10);
-    $("zoom").value=set.zoom||cap.zoom.min; S.zoomHWMax=cap.zoom.max;
-    $("zVal").textContent=$("zoom").value;
-  }else $("zoomBlock").hidden=true;
-  /* focus */
-  if(cap.focusMode&&cap.focusMode.includes("manual")&&cap.focusDistance){
-    $("focusBlock").hidden=false;
-    $("focus").min=cap.focusDistance.min; $("focus").max=cap.focusDistance.max;
-    $("focus").value=set.focusDistance||cap.focusDistance.min;
-    $("fVal").textContent=$("focus").value;
-  }else $("focusBlock").hidden=true;
-};
-const applyPTZ=async()=>{
-  const tasks=[];
-  const zoomVal=parseFloat($("zoom").value);
-  if(!$("zoomBlock").hidden && zoomVal<=S.zoomHWMax){tasks.push(S.track.applyConstraints({advanced:[{zoom:zoomVal}]}));}
-  if(!$("focusBlock").hidden){const f=parseFloat($("focus").value);tasks.push(S.track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:f}]}));}
-  await Promise.allSettled(tasks);
-};
-/* ---------- capture loop ---------- */
-const plan=()=>{clearTimeout(S.timer); if(S.running) S.timer=setTimeout(capture,3500);};
-const capture=async()=>{
-  const v=$("view"); if(!v.videoWidth){plan();return;}
-  await applyPTZ();
-  /* orientation + optional digital zoom */
-  const portrait=v.videoWidth<v.videoHeight;
-  const zoomVal=parseFloat($("zoom").value);
-  const digital=zoomVal>S.zoomHWMax?zoomVal/S.zoomHWMax:1;
-  const srcW=portrait?v.videoHeight/digital:v.videoWidth/digital;
-  const srcH=portrait?v.videoWidth/digital:v.videoHeight/digital;
-  const cx=v.videoWidth/2, cy=v.videoHeight/2;
-  const canvas=document.createElement("canvas");
-  canvas.width=portrait?v.videoHeight:v.videoWidth;
-  canvas.height=portrait?v.videoWidth:v.videoHeight;
-  const ctx=canvas.getContext("2d"); ctx.imageSmoothingEnabled=true;
-  ctx.save();
-  if(portrait){ctx.translate(canvas.width/2,canvas.height/2);ctx.rotate(Math.PI/2);ctx.translate(-canvas.height/2,-canvas.width/2);}  
-  ctx.drawImage(v,cx-srcW/2,cy-srcH/2,srcW,srcH,0,0,canvas.width,canvas.height);
-  ctx.restore();
-  try{
-    const answer=await ask(canvas.toDataURL("image/jpeg",0.85));
-    log(answer); try{speechSynthesis.speak(new SpeechSynthesisUtterance(answer));}catch{}
-  }catch(e){log(`AI error: ${e.message}`);} plan();
-};
-/* ---------- OpenAI call ---------- */
-const ask=async img=>{
-  const payload={
-    model:"o4-mini",
-    messages:[{role:"user",content:[
-      {type:"text",text:`Solve the math problem in the image. Think step by step, then write ONLY the numeric answer on the final line.`},
-      {type:"image_url",image_url:{url:img,detail:"high"}}
-    ]}],
-    max_completion_tokens:512,
-    reasoning_effort:"high"
-  };
-  const res=await fetch("https://api.openai.com/v1/chat/completions",{
-    method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${S.key}`},body:JSON.stringify(payload)});
-  const j=await res.json(); if(!res.ok) throw Error(j.error?.message||res.status);
-  return j.choices[0].message.content.trim();
-};
-/* ---------- UI button handlers ---------- */
-$("save").onclick=()=>{S.key=$("key").value.trim(); if(!S.key) return; localStorage.setItem("TV_KEY",S.key); $("key").value="********"; listCams().then(startCam); ui();};
-$("clear").onclick=()=>{localStorage.removeItem("TV_KEY"); S.key=""; if(S.stream) S.stream.getTracks().forEach(t=>t.stop()); S.track=null; ui(); $("camSelect").hidden=$("controls").hidden=true; $("key").value="";};
-$("start").onclick=()=>{if(!S.track||!S.key) return; S.running=true; capture(); ui();};
-$("stop").onclick=()=>{S.running=false; plan(); ui();};
-/* log expand toggle */
-let big=false; $("log").ondblclick=()=>{big=!big; $("log").style.maxHeight=big?"80vh":"30vh";};
-/* initialisation */
-if(S.key){$("key").value="********"; listCams().then(startCam);} ui();
+const S={key:localStorage.getItem("TV_KEY")||"",stream:null,track:null,run:false,timer:null,hwZoom:1,digZoom:1};
+const log=t=>{$("log").textContent=`${new Date().toLocaleTimeString()} — ${t}\n`+$("log").textContent};
+const ui=()=>{$("key").disabled=!!S.key;$("save").disabled=!!S.key;$("clear").disabled=!S.key;$("start").disabled=!S.track||!S.key||S.run;$("stop").disabled=!S.run;$("cam").hidden=!S.track;$("ctrls").hidden=!S.track};
+/* cams */
+const list=async()=>{const d=await navigator.mediaDevices.enumerateDevices();const v=d.filter(x=>x.kind==="videoinput");$("cam").innerHTML="";v.forEach(c=>{const o=document.createElement("option");o.value=c.deviceId;o.textContent=c.label||"camera";$("cam").appendChild(o);});$("cam").hidden=!v.length;$("cam").onchange=start;};
+/* start cam */
+const start=async()=>{if(S.stream)S.stream.getTracks().forEach(t=>t.stop());const id=$("cam").value||undefined;try{S.stream=await navigator.mediaDevices.getUserMedia({video:id?{deviceId:{exact:id}}:{facingMode:"environment"}});S.track=S.stream.getVideoTracks()[0];$("view").srcObject=S.stream;log(`Lens: ${S.track.label||""}`);ptz();}catch(e){log(`Cam error: ${e.message}`);}ui();};
+/* PTZ setup */
+const ptz=()=>{const c=S.track.getCapabilities(),s=S.track.getSettings();/* zoom */if(c.zoom){$("zBlk").hidden=false;S.hwZoom=c.zoom.max;$("zoom").max=10;$("zoom").value=s.zoom||1;$("zOut").textContent=$("zoom").value;}else{$("zBlk").hidden=true;S.hwZoom=1;}/* focus */if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){$("fBlk").hidden=false;$("focus").min=c.focusDistance.min;$("focus").max=c.focusDistance.max;$("focus").step=c.focusDistance.step||0.01;$("focus").value=s.focusDistance||c.focusDistance.min;$("fOut").textContent=$("focus").value;}else{$("fBlk").hidden=true;}};
+/* live PTZ apply */
+const apply=async()=>{const tasks=[];const z=parseFloat($("zoom").value);$("zOut").textContent=z;S.digZoom=z>S.hwZoom?z/S.hwZoom:1;if(z<=S.hwZoom)tasks.push(S.track.applyConstraints({advanced:[{zoom:z}]}));if(!$("fBlk").hidden){const f=parseFloat($("focus").value);$("fOut").textContent=f;tasks.push(S.track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:f}]}));}await Promise.allSettled(tasks);} ;
+$("zoom").oninput=apply;$("focus").oninput=apply;
+/* loop */
+const plan=()=>{clearTimeout(S.timer);if(S.run)S.timer=setTimeout(capture,3500);};
+const capture=async()=>{const v=$("view");if(!v.videoWidth){plan();return;}await apply();const portrait=v.videoWidth<v.videoHeight;const srcW=portrait?v.videoHeight/S.digZoom:v.videoWidth/S.digZoom;const srcH=portrait?v.videoWidth/S.digZoom:v.videoHeight/S.digZoom;const cx=v.videoWidth/2,cy=v.videoHeight/2;const can=document.createElement("canvas");can.width=portrait?v.videoHeight:v.videoWidth;can.height=portrait?v.videoWidth:v.videoHeight;const ctx=can.getContext("2d");ctx.save();if(portrait){ctx.translate(can.width/2,can.height/2);ctx.rotate(Math.PI/2);ctx.translate(-can.height/2,-can.width/2);}ctx.drawImage(v,cx-srcW/2,cy-srcH/2,srcW,srcH,0,0,can.width,can.height);ctx.restore();try{const ans=await ask(can.toDataURL("image/jpeg",0.85));log(ans);try{speechSynthesis.speak(new SpeechSynthesisUtterance(ans));}catch{}}catch(e){log(`AI error: ${e.message}`);}plan();};
+/* OpenAI */
+const ask=async img=>{const body={model:"o4-mini",messages:[{role:"user",content:[{type:"text",text:"Solve the math problem in the image. Think step by step, then output ONLY the numeric answer on the last line."},{type:"image_url",image_url:{url:img,detail:"high"}}]}],max_completion_tokens:512,reasoning_effort:"high"};const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${S.key}`},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw Error(j.error?.message||r.status);return j.choices[0].message.content.trim();};
+/* buttons */
+$("save").onclick=()=>{S.key=$("key").value.trim();if(!S.key)return;localStorage.setItem("TV_KEY",S.key);$("key").value="********";list().then(start);ui();};
+$("clear").onclick=()=>{localStorage.removeItem("TV_KEY");S.key="";if(S.stream)S.stream.getTracks().forEach(t=>t.stop());S.track=null;$("cam").hidden=$("ctrls").hidden=true;ui();$("key").value="";};
+$("start").onclick=()=>{if(!S.track||!S.key)return;S.run=true;capture();ui();};
+$("stop").onclick=()=>{S.run=false;plan();ui();};
+/* log expand */
+let big=false;$("log").ondblclick=()=>{big=!big;$("log").style.maxHeight=big?"80vh":"35vh";};
+/* init */
+if(S.key){$("key").value="********";list().then(start);} ui();
 })();
 </script>
 </body>
