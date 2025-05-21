@@ -34,9 +34,9 @@ footer{padding:1rem;display:flex;gap:1rem}
 <div class="top">
   <select id="cam" hidden></select>
 
-  <div><label>Zoom <output id="zVal">1</output>×</label><input id="zoom" class="range" type="range" step=".1"></div>
+  <div><label>Zoom <output id="zO">1</output>×</label><input id="zoom" class="range" type="range" step=".1"></div>
 
-  <div id="focusWrap" hidden><label>Focus <output id="fVal">auto</output></label><input id="focus" class="range" type="range" step=".01"></div>
+  <div id="fWrap" hidden><label>Focus <output id="fO">auto</output></label><input id="focus" class="range" type="range" step=".01"></div>
 
   <input id="key" type="password" placeholder="OpenAI key">
   <div style="display:flex;gap:1rem"><button id="save">Save</button><button id="clear" disabled>Clear</button></div>
@@ -57,59 +57,105 @@ footer{padding:1rem;display:flex;gap:1rem}
 <script>
 (()=>{
 
-const $=i=>document.getElementById(i);
-const S={k:localStorage.getItem("TV_KEY")||"",stream:null,track:null,run:false,timer:null,hw:1,dig:1};
+const $=id=>document.getElementById(id);
+const st={k:localStorage.getItem("TV_KEY")||"",s:null,t:null,run:false,timer:null,hw:1,dig:1};
 const ts=()=>new Date().toLocaleTimeString();
-const log=(m,o)=>{if(!$.verb.checked&&o)return;const b=$("log");b.value+=`[${ts()}] ${m}\n`;if(o)b.value+=JSON.stringify(o,null,2)+"\n";b.scrollTop=b.scrollHeight};
+const add=(m,o)=>{if(!$.verb.checked&&o) return; const b=$("log");b.value+=`[${ts()}] ${m}\n`; if(o) b.value+=JSON.stringify(o,null,2)+"\n"; b.scrollTop=b.scrollHeight};
 
-const ui=()=>{["key","save"].forEach(id=>$(id).disabled=!!S.k);$("clear").disabled=!S.k;$("start").disabled=!S.track||!S.k||S.run;$("stop").disabled=!S.run};
+const ui=()=>{["key","save"].forEach(i=>$(i).disabled=!!st.k);$("clear").disabled=!st.k;$("start").disabled=!st.t||!st.k||st.run;$("stop").disabled=!st.run};
 
-const list=async()=>{const d=await navigator.mediaDevices.enumerateDevices(),c=d.filter(x=>x.kind==="videoinput");$("cam").innerHTML="";c.forEach(e=>{const o=document.createElement("option");o.value=e.deviceId;o.textContent=e.label||"camera";$("cam").appendChild(o)});if(c.length){$("cam").hidden=false;$("cam").onchange=cam}};
+async function listCams(){
+  const dev=await navigator.mediaDevices.enumerateDevices();
+  const cams=dev.filter(d=>d.kind==="videoinput");
+  $("cam").innerHTML="";
+  cams.forEach(c=>{const o=document.createElement("option");o.value=c.deviceId;o.textContent=c.label||"camera";$("cam").appendChild(o)});
+  if(cams.length){$("cam").hidden=false;$("cam").onchange=initCam;}
+}
 
-const cam=async()=>{S.stream?.getTracks().forEach(t=>t.stop());const id=$("cam").value||undefined;
-S.stream=await navigator.mediaDevices.getUserMedia({video:id?{deviceId:{exact:id},width:{ideal:1024}}:{facingMode:"environment",width:{ideal:1024}}});
-S.track=S.stream.getVideoTracks()[0];$("view").srcObject=S.stream;log("Lens ready",{label:S.track.label});ptz();ui()};
+async function initCam(){
+  st.s?.getTracks().forEach(t=>t.stop());
+  const id=$("cam").value||undefined;
+  st.s=await navigator.mediaDevices.getUserMedia({
+    video:{ ...(id?{deviceId:{exact:id}}:{facingMode:"environment"}),
+            width:{ideal:1024}, panTiltZoom:true }});
+  st.t=st.s.getVideoTracks()[0];
+  $("view").srcObject=st.s;
+  add("Lens ready",{label:st.t.label});
+  initControls();
+  ui();
+}
 
-const ptz=()=>{const cap=S.track.getCapabilities(),set=S.track.getSettings();
-S.hw=cap.zoom?cap.zoom.max:1;$("zoom").min=1;$("zoom").max=Math.max(12,S.hw);$("zoom").value=set.zoom||1;$("zVal").textContent=$("zoom").value;
-$("zoom").oninput=e=>{const z=+e.target.value;$("zVal").textContent=z;S.dig=z>S.hw?z/S.hw:1;if(z<=S.hw)S.track.applyConstraints({advanced:[{zoom:z}]})};
-if(cap.focusMode&&cap.focusMode.includes("manual")&&cap.focusDistance){$("focusWrap").hidden=false;$("focus").min=cap.focusDistance.min;$("focus").max=cap.focusDistance.max;$("focus").value=set.focusDistance||cap.focusDistance.min;$("fVal").textContent=$("focus").value;
-$("focus").oninput=e=>{const v=+e.target.value;$("fVal").textContent=v;S.track.applyConstraints({advanced:[{focusMode:"manual",focusDistance:v}]})}}else{$("focusWrap").hidden=true}};
+function initControls(){
+  const c=st.t.getCapabilities(),s=st.t.getSettings();
+  st.hw=c.zoom?c.zoom.max:1;
+  $("zoom").min=1;$("zoom").max=Math.max(12,st.hw);
+  $("zoom").value=s.zoom||1;$("zO").textContent=$("zoom").value;
+  $("zoom").oninput=e=>{
+    const v=+e.target.value; $("zO").textContent=v;
+    st.dig=v>st.hw? v/st.hw : 1;
+    if(v<=st.hw) st.t.applyConstraints({advanced:[{zoom:v}]});
+  };
 
-const plan=()=>{clearTimeout(S.timer);if(S.run)S.timer=setTimeout(capture,3500)};
+  if(c.focusMode&&c.focusMode.includes("manual")&&c.focusDistance){
+    $("fWrap").hidden=false;
+    $("focus").min=c.focusDistance.min;$("focus").max=c.focusDistance.max;
+    $("focus").value=s.focusDistance||c.focusDistance.min;$("fO").textContent=$("focus").value;
+    $("focus").oninput=e=>{
+      const v=+e.target.value;$("fO").textContent=v;
+      st.t.applyConstraints({advanced:[{focusMode:"manual",focusDistance:v}]});
+    };
+  } else $("fWrap").hidden=true;
+}
 
-const snap=v=>{const p=v.videoWidth<v.videoHeight,w=v.videoWidth,h=v.videoHeight,d=S.dig;
-const cw=p?h/d:w/d,ch=p?w/d:h/d,can=document.createElement("canvas");can.width=p?h:w;can.height=p?w:h;
-const ctx=can.getContext("2d");ctx.save();if(p){ctx.translate(can.width/2,can.height/2);ctx.rotate(Math.PI/2);ctx.translate(-can.height/2,-can.width/2)}
-ctx.drawImage(v,w/2-cw/2,h/2-ch/2,cw,ch,0,0,can.width,can.height);ctx.restore();return can.toDataURL("image/jpeg",.85)};
+function schedule(){clearTimeout(st.timer); if(st.run) st.timer=setTimeout(capture,3500);}
 
-const ask=async img=>{
+function snap(v){
+  const p=v.videoWidth<v.videoHeight,w=v.videoWidth,h=v.videoHeight,d=st.dig,
+        cw=p?h/d:w/d, ch=p?w/d:h/d, can=document.createElement("canvas");
+  can.width=p?h:w; can.height=p?w:h;
+  const ctx=can.getContext("2d"); ctx.save();
+  if(p){ctx.translate(can.width/2,can.height/2);ctx.rotate(Math.PI/2);ctx.translate(-can.height/2,-can.width/2);}
+  ctx.drawImage(v,w/2-cw/2,h/2-ch/2,cw,ch,0,0,can.width,can.height); ctx.restore();
+  return can.toDataURL("image/jpeg",.85);
+}
+
+async function callOpenAI(b64){
   const body={model:"o4-mini",reasoning_effort:"high",max_completion_tokens:768,
     messages:[{role:"user",content:[
       {type:"text",text:"Solve the math problem in the image. Think step by step and return ONLY the numeric answer on the last line."},
-      {type:"image_url",image_url:{url:img,detail:"high"}}]}]};
-  log("Payload");if($.verb.checked)log("",body);
-  const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${S.k}`},body:JSON.stringify(body)})
-               .catch(e=>{throw Error("network "+e.message)});
-  const txt=await r.text();log("HTTP "+r.status);if($.verb.checked)log("",txt.slice(0,200));
-  if(!r.ok){if(r.status===429){const w=parseInt(r.headers.get("retry-after")||2);log("Wait "+w+" s");await new Promise(rs=>setTimeout(rs,w*1000));return ask(img)}
-    throw Error("HTTP "+r.status)}
-  const out=JSON.parse(txt).choices?.[0]?.message?.content?.trim()||"",ans=out.split(/\n/).pop().trim();
-  if($.verb.checked)log("Model",out.slice(0,120));
-  if(!/^\d/.test(ans))throw Error("bad answer");return ans};
+      {type:"image_url",image_url:{url:b64,detail:"high"}}]}]};
+  if($.verb.checked) add("Payload",body); else add("Payload");
+  let res;
+  try{res=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${st.k}`},body:JSON.stringify(body)});}
+  catch(e){throw Error("network "+e.message);}
+  if(!res.ok){
+    if(res.status===429){const wait=parseInt(res.headers.get("retry-after")||2);add("429, wait "+wait+"s");await new Promise(r=>setTimeout(r,wait*1000));return callOpenAI(b64);}
+    throw Error("HTTP "+res.status);}
+  const txt=await res.text(); if($.verb.checked) add("HTTP 200",txt.slice(0,200)); else add("HTTP 200");
+  const content=JSON.parse(txt).choices?.[0]?.message?.content?.trim()||"",
+        ans=content.split(/\n/).pop().trim();
+  if(!/^\d/.test(ans)) throw Error("bad answer");
+  return ans;
+}
 
-const capture=async()=>{const v=$("view");if(!v.videoWidth){plan();return}
-try{const a=await ask(snap(v));log("✓ "+a);try{speechSynthesis.speak(new SpeechSynthesisUtterance(a))}catch{}}catch(e){log("✗ "+e.message)}plan()};
+async function capture(){
+  const v=$("view"); if(!v.videoWidth){schedule();return;}
+  try{const ans=await callOpenAI(snap(v)); add("✓ "+ans); try{speechSynthesis.speak(new SpeechSynthesisUtterance(ans))}catch{}}
+  catch(e){add("✗ "+e.message);}
+  schedule();
+}
 
-/* buttons */
-$("save").onclick=()=>{S.k=$("key").value.trim();if(!S.k)return;localStorage.setItem("TV_KEY",S.k);$("key").value="••••••••";list().then(cam);ui()};
-$("clear").onclick=()=>{localStorage.removeItem("TV_KEY");S.k="";$("key").value="";S.stream?.getTracks().forEach(t=>t.stop());S.track=null;ui()};
-$("start").onclick=()=>{if(S.track&&S.k){S.run=true;capture();ui()}};
-$("stop").onclick=()=>{S.run=false;plan();ui()};
-$("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("log").value);log("Copied")}catch{const t=$("log");t.select();document.execCommand("copy");log("Fallback copy")}};
+/* BUTTONS */
+$("save").onclick=()=>{st.k=$("key").value.trim(); if(!st.k) return;
+  localStorage.setItem("TV_KEY",st.k); $("key").value="••••••••"; listCams().then(initCam); ui(); };
+$("clear").onclick=()=>{localStorage.removeItem("TV_KEY"); st.k=""; $("key").value=""; st.s?.getTracks().forEach(t=>t.stop()); st.t=null; ui();}
+$("start").onclick=()=>{if(st.t&&st.k){st.run=true; capture(); ui();}}
+$("stop").onclick =()=>{st.run=false; schedule(); ui(); }
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("log").value); add("Copied")}
+  catch{const l=$("log"); l.select(); document.execCommand("copy"); add("Copy (fallback)") }};
 
-/* init */
-if(S.k){$("key").value="••••••••";list().then(cam)}ui();
+/* INIT */
+if(st.k){$("key").value="••••••••"; listCams().then(initCam) } ui();
 
 })();
 </script>
