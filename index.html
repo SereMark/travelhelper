@@ -80,8 +80,10 @@ output { font-weight: 500; margin-left: 0.2rem; font-feature-settings: "tnum"; f
     min-height: 150px;
 }
 .frame {
-    width: 100%; aspect-ratio: 3 / 4; max-height: 100%; 
-    max-width: calc(100vh * 0.75); margin: auto; 
+    width: 95%;
+    aspect-ratio: 4 / 3;
+    max-height: 95vh;
+    margin: auto;
     border-radius: 5px; overflow: hidden; background: #000; position: relative; box-shadow: 0 0 6px var(--shadow-color);
 }
 video { width: 100%; height: 100%; object-fit: cover; display: block; background: #050505; }
@@ -231,8 +233,13 @@ const AppState = {
 let sounds = {
     initSuccess: null,
     startAnalysis: null,
-    aiResponse: null,
+    captureSuccess: null,
+    aiProcessingStart: null,
+    aiSuccess: null,
+    aiUnreadableOrNoMCQ: null,
+    aiFormatError: null,
     error: null,
+    toastInfo: null,
 };
 
 function initializeSounds() {
@@ -242,6 +249,7 @@ function initializeSounds() {
             envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.3 },
             oscillator: { type: "sine" }
         }).toDestination();
+
         sounds.startAnalysis = new Tone.AMSynth({
             volume: -15, harmonicity: 1.2, detune: 0,
             oscillator: { type: "fmsine", modulationType: "sine", modulationIndex: 2, harmonicity: 1.01 },
@@ -249,14 +257,43 @@ function initializeSounds() {
             modulation: { type: "sine" },
             modulationEnvelope: { attack: 0.05, decay: 0.01, sustain: 1, release: 0.05 }
         }).toDestination();
-        sounds.aiResponse = new Tone.Synth({
+
+        sounds.captureSuccess = new Tone.MembraneSynth({
+            pitchDecay: 0.008, octaves: 2, oscillator: { type: "sine" },
+            envelope: { attack: 0.001, decay: 0.2, sustain: 0.01, release: 0.01 }, volume: -12
+        }).toDestination();
+
+        sounds.aiProcessingStart = new Tone.Synth({
             volume: -10, oscillator: { type: "triangle" },
             envelope: { attack: 0.005, decay: 0.1, sustain: 0.01, release: 0.1 }
         }).toDestination();
+        
+        sounds.aiSuccess = new Tone.PolySynth(Tone.Synth, {
+            polyphony:3, volume: -12, 
+            envelope: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.3}, 
+            oscillator: {type: "triangle"}
+        }).toDestination();
+
+        sounds.aiUnreadableOrNoMCQ = new Tone.Synth({
+            volume: -18, oscillator: {type: "square", detune: 10 }, 
+            envelope: { attack: 0.01, decay: 0.4, sustain:0, release: 0.1}
+        }).toDestination();
+
+        sounds.aiFormatError = new Tone.Synth({
+            volume: -18, oscillator: {type: "sawtooth", detune: -20 }, 
+            envelope: { attack: 0.02, decay: 0.5, sustain:0, release: 0.1}
+        }).toDestination();
+
         sounds.error = new Tone.NoiseSynth({
             volume: -18, noise: { type: 'brown' },
             envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.1 }
         }).toDestination();
+
+        sounds.toastInfo = new Tone.Synth({
+            volume: -20, oscillator: {type: "sine"}, 
+            envelope: {attack:0.005,decay:0.1,sustain:0.01,release:0.1}
+        }).toDestination();
+
         console.log("[DEBUG] Tone.js sounds initialized.");
     } else {
         console.error("[DEBUG] Tone.js library not loaded. Audio feedback disabled.");
@@ -285,10 +322,20 @@ function playSound(soundName) {
         } else if (soundName === 'startAnalysis' && sounds.startAnalysis.triggerAttackRelease) {
             sounds.startAnalysis.triggerAttackRelease("A4", "16n", now);
             sounds.startAnalysis.triggerAttackRelease("C5", "16n", now + 0.1);
-        } else if (soundName === 'aiResponse' && sounds.aiResponse.triggerAttackRelease) {
-            sounds.aiResponse.triggerAttackRelease("E5", "16n", now);
+        } else if (soundName === 'captureSuccess' && sounds.captureSuccess.triggerAttack) {
+            sounds.captureSuccess.triggerAttack("C3", now);
+        } else if (soundName === 'aiProcessingStart' && sounds.aiProcessingStart.triggerAttackRelease) {
+            sounds.aiProcessingStart.triggerAttackRelease("E5", "16n", now);
+        } else if (soundName === 'aiSuccess' && sounds.aiSuccess.triggerAttackRelease) {
+            sounds.aiSuccess.triggerAttackRelease(["D5", "F#5", "A5"], "8n", now);
+        } else if (soundName === 'aiUnreadableOrNoMCQ' && sounds.aiUnreadableOrNoMCQ.triggerAttackRelease) {
+            sounds.aiUnreadableOrNoMCQ.triggerAttackRelease("G3", "4n", now);
+        } else if (soundName === 'aiFormatError' && sounds.aiFormatError.triggerAttackRelease) {
+            sounds.aiFormatError.triggerAttackRelease("C#3", "4n", now);
         } else if (soundName === 'error' && sounds.error.triggerAttackRelease) {
             sounds.error.triggerAttackRelease("8n", now);
+        } else if (soundName === 'toastInfo' && sounds.toastInfo.triggerAttackRelease) {
+            sounds.toastInfo.triggerAttackRelease("C6", "32n", now);
         }
     } else if (!AppState.toneStarted) {
         logger.log(`Sound '${soundName}' skipped: audio context not started.`);
@@ -318,7 +365,16 @@ const logger = {
         showToast(message.length > 40 ? message.substring(0,37)+'...' : message, 'error', 5000);
         playSound('error');
     },
-    success: (message, details) => { console.log(`[SUCCESS] ${new Date().toLocaleTimeString()} ${message}`, details || ''); logger._logToTextarea(message, details); showToast(message, 'success');}
+    success: (message, details) => { 
+        console.log(`[SUCCESS] ${new Date().toLocaleTimeString()} ${message}`, details || ''); 
+        logger._logToTextarea(message, details); 
+        showToast(message, 'success');
+        if (message.includes("API Key Saved") || message.includes("Log copied")) {
+             playSound('initSuccess');
+        } else if (message.includes("API Key Cleared")) {
+            playSound('toastInfo');
+        }
+    }
 };
 
 function promiseWithTimeout(promise, ms, timeoutErrorMessage = 'Operation timed out') {
@@ -329,8 +385,17 @@ function promiseWithTimeout(promise, ms, timeoutErrorMessage = 'Operation timed 
 
 const showToast = (message, type = 'info', duration = 3000) => {
     const el = $('toast'); clearTimeout(AppState.toastTimeout); el.textContent = message;
-    el.className = 'toast'; if (type === 'error') el.classList.add('error'); else if (type === 'success') el.classList.add('success');
+    el.className = 'toast'; 
+    if (type === 'error') el.classList.add('error'); 
+    else if (type === 'success') el.classList.add('success');
+    
     el.classList.add('show'); AppState.toastTimeout = setTimeout(() => { el.classList.remove('show'); }, duration);
+
+    if (type === 'info') {
+        playSound('toastInfo');
+    } else if (type === 'success' && !(message.toLowerCase().includes("answer") || message.toLowerCase().includes("camera active") || message.toLowerCase().includes("api key") || message.toLowerCase().includes("log copied"))) {
+        playSound('initSuccess'); 
+    }
 };
 
 const updateStatus = (message, type = 'info', showSpinnerOnVideo = false) => {
@@ -383,18 +448,15 @@ const updateUI = () => {
     $('toggleLogBtn').textContent = AppState.isLogVisible ? 'Hide Log' : 'Log';
 
     if (AppState.isInitializingCamera) {
-        // Status is set by listCameras
     } else if (!keyPresent) {
         $('apiKeyEntryRow').classList.remove('hidden-control');
         $('apiKeyDisplayRow').classList.add('hidden-control');
     } else if (!AppState.videoTrack) {
-        // Status like "Camera not available" set by listCameras if it fails
     } else if (AppState.isProcessing) {
-        // "Capturing", "Analyzing" set by processFrame
     } else if (cameraIsActuallyReady) {
         const currentStatus = $('statusBar').textContent;
         if (currentStatus === 'Initializing app...' || currentStatus === '' || currentStatus.includes("Initializing camera") || currentStatus.includes("Stopped") || currentStatus.includes("API Key cleared") || currentStatus.includes("Welcome!")) {
-            updateStatus("Ready! Aim at problem.", 'success', false);
+            updateStatus("Ready! Hold phone horizontally. Aim at problem.", 'success', false);
         }
     }
 };
@@ -419,7 +481,7 @@ const _initCameraWork = async (deviceId) => {
         height: { ideal: 1080, max: 1440 }, 
         frameRate: { ideal: 24, max: 30 }, 
         facingMode: "environment", 
-        aspectRatio: {ideal: 3/4},
+        aspectRatio: {ideal: 4/3}, 
         audio: false 
     }};
     if(deviceId){constraints.video.deviceId={exact:deviceId};delete constraints.video.facingMode;}
@@ -463,7 +525,7 @@ const listCameras = async () => {
         if(!AppState.videoTrack && !document.querySelector('.critical-message-overlay.visible')){
             let uMsg=`Failed to initialize camera system.`;
             if(err.name==="NotFoundError"||err.name==="DevicesNotFoundError"||err.message.includes("No video devices"))uMsg="No suitable camera found on device.";
-            else if(err.name==="OverconstrainedError"||err.name==="ConstraintNotSatisfiedError")uMsg="Camera does not support requested settings (e.g. 3:4 aspect ratio). Try another camera.";
+            else if(err.name==="OverconstrainedError"||err.name==="ConstraintNotSatisfiedError")uMsg="Camera does not support requested settings (e.g. 4:3 aspect ratio). Try another camera.";
             else if(err.message.includes("timed out"))uMsg=err.message;
             else if(err.message && !(err.name==="NotAllowedError"||err.name==="PermissionDeniedError")) uMsg=`Camera error: ${err.message.substring(0,60)}`;
             else if (!(err.name==="NotAllowedError"||err.name==="PermissionDeniedError")) uMsg = "An unknown error occurred with the camera.";
@@ -482,39 +544,64 @@ const captureImage = () => {
     }
     const videoIntrinsicWidth = videoEl.videoWidth; const videoIntrinsicHeight = videoEl.videoHeight;
     const videoIntrinsicAR = videoIntrinsicWidth / videoIntrinsicHeight;
-    const targetFrameAR = 3 / 4; 
+    const targetFrameAR = 4 / 3;
+
     let sx = 0, sy = 0, sWidth = 0, sHeight = 0;
     if (videoIntrinsicAR > targetFrameAR) {
-        sHeight = videoIntrinsicHeight; sWidth = videoIntrinsicHeight * targetFrameAR; 
-        sx = (videoIntrinsicWidth - sWidth) / 2; sy = 0;
+        sHeight = videoIntrinsicHeight; 
+        sWidth = videoIntrinsicHeight * targetFrameAR; 
+        sx = (videoIntrinsicWidth - sWidth) / 2; 
+        sy = 0;
     } else {
-        sWidth = videoIntrinsicWidth; sHeight = videoIntrinsicWidth / targetFrameAR; 
-        sx = 0; sy = (videoIntrinsicHeight - sHeight) / 2;
+        sWidth = videoIntrinsicWidth; 
+        sHeight = videoIntrinsicWidth / targetFrameAR; 
+        sx = 0; 
+        sy = (videoIntrinsicHeight - sHeight) / 2;
     }
+    
     sWidth = Math.max(1, Math.floor(sWidth)); sHeight = Math.max(1, Math.floor(sHeight));
     sx = Math.max(0, Math.floor(sx)); sy = Math.max(0, Math.floor(sy));
     if (sx + sWidth > videoIntrinsicWidth) sWidth = videoIntrinsicWidth - sx;
     if (sy + sHeight > videoIntrinsicHeight) sHeight = videoIntrinsicHeight - sy;
     if (sWidth <= 0 || sHeight <= 0) { logger.error("Calculated source dimensions for capture are invalid.", {sWidth, sHeight}); return null; }
+    
     const sourceCropCanvas = document.createElement('canvas'); sourceCropCanvas.width = sWidth; sourceCropCanvas.height = sHeight;
     const ctxS = sourceCropCanvas.getContext('2d'); ctxS.drawImage(videoEl, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+    
     let effDigZoom = 1;
     if (AppState.cameraCapabilities.zoom && AppState.currentZoom > AppState.cameraCapabilities.zoom.max) effDigZoom = AppState.currentZoom / AppState.cameraCapabilities.zoom.max;
     else if (!AppState.cameraCapabilities.zoom && AppState.currentZoom > 1) effDigZoom = AppState.currentZoom;
+    
     const zoomedWidth = Math.floor(sWidth / effDigZoom); const zoomedHeight = Math.floor(sHeight / effDigZoom);
     const zoomedSx = Math.floor((sWidth - zoomedWidth) / 2); const zoomedSy = Math.floor((sHeight - zoomedHeight) / 2);
     if (zoomedWidth <= 0 || zoomedHeight <= 0) { logger.error("Calculated digital zoom dimensions are invalid.", {zoomedWidth, zoomedHeight}); return null; }
+    
     const digitallyZoomedCanvas = document.createElement('canvas'); digitallyZoomedCanvas.width = zoomedWidth; digitallyZoomedCanvas.height = zoomedHeight;
     const ctxDZ = digitallyZoomedCanvas.getContext('2d'); ctxDZ.drawImage(sourceCropCanvas, zoomedSx, zoomedSy, zoomedWidth, zoomedHeight, 0, 0, zoomedWidth, zoomedHeight);
-    const MAX_DIMENSION = 1024; let tW = digitallyZoomedCanvas.width, tH = digitallyZoomedCanvas.height;
+    
+    const MAX_DIMENSION = 1024;
+    let tW = digitallyZoomedCanvas.width, tH = digitallyZoomedCanvas.height;
     if (tW <= 0 || tH <= 0) { logger.error("Dimensions before downscaling are invalid.", {tW, tH}); return null; }
-    if (tW > MAX_DIMENSION || tH > MAX_DIMENSION) { const currentAR = tW / tH; if (tW > tH) { tW = MAX_DIMENSION; tH = Math.round(tW / currentAR); } else { tH = MAX_DIMENSION; tW = Math.round(tH * currentAR); } }
+
+    if (tW > MAX_DIMENSION || tH > MAX_DIMENSION) {
+        const currentAR = tW / tH;
+        if (tW > tH) {
+            tW = MAX_DIMENSION;
+            tH = Math.round(tW / currentAR);
+        } else { 
+            tH = MAX_DIMENSION;
+            tW = Math.round(tH * currentAR);
+        }
+    }
     tW = Math.max(1, tW); tH = Math.max(1, tH);
+    
     const finalCanvas = document.createElement('canvas'); finalCanvas.width = tW; finalCanvas.height = tH;
     const ctxF = finalCanvas.getContext('2d'); ctxF.drawImage(digitallyZoomedCanvas, 0, 0, digitallyZoomedCanvas.width, digitallyZoomedCanvas.height, 0, 0, tW, tH);
+    
     const imageDataUrl = finalCanvas.toDataURL('image/jpeg', 0.85);
+    playSound('captureSuccess');
     logger.log(`Image captured (sent: ${tW}x${tH}, size: ${Math.round(imageDataUrl.length/1024)}KB).`,
-               {originalStream: `${videoIntrinsicWidth}x${videoIntrinsicHeight}`, targetCropAR: targetFrameAR.toFixed(2), calculatedCrop: `${sWidth}x${sHeight}`, digitalZoomFactor: effDigZoom.toFixed(2)});
+                {originalStream: `${videoIntrinsicWidth}x${videoIntrinsicHeight}`, targetCropAR: targetFrameAR.toFixed(2), calculatedCrop: `${sWidth}x${sHeight} from ${sx},${sy}`, digitalZoomFactor: effDigZoom.toFixed(2)});
     return imageDataUrl;
 };
 
@@ -523,7 +610,7 @@ const solveMathProblem = async (imageDataUrl) => {
     throw new Error("API Key is missing.");
   }
 
-  logger.log("Sending image to OpenAI (o4-mini, high reasoning)…", {
+  logger.log("Sending image to OpenAI (o4-mini)...", {
     imageSizeKB: Math.round(imageDataUrl.length / 1024)
   });
 
@@ -532,10 +619,12 @@ const solveMathProblem = async (imageDataUrl) => {
       role: "system",
       content:
         `You are an expert in Reinforcement Learning multiple-choice quizzes. ` +
-        `After inspecting the image you will reply **on the FIRST line only** ` +
+        `Your primary goal is to determine the correct answer with the highest possible accuracy. ` +
+        `Analyze the provided image meticulously. Consider all details, and take sufficient time to reason through the problem. ` +
+        `After your thorough analysis, reply **on the FIRST line only** ` +
         `with the identifier(s) of the correct option(s) – letter or number – ` +
-        `comma-separated if several (e.g. "A"  or "B, D").  ` +
-        `If the image is unreadable or no MCQ is found, reply exactly: ` +
+        `comma-separated if several (e.g. "A"  or "B, D"). ` +
+        `If the image is unreadable, no MCQ is found, or if you cannot determine the answer with high confidence, reply *only* with the exact phrase: ` +
         `UNREADABLE_OR_NO_MCQ`
     },
     {
@@ -557,7 +646,7 @@ const solveMathProblem = async (imageDataUrl) => {
   const payload = {
     model: "o4-mini",
     reasoning_effort: "high",
-    max_completion_tokens: 3000,
+    max_completion_tokens: 5000,
     messages
   };
 
@@ -571,32 +660,38 @@ const solveMathProblem = async (imageDataUrl) => {
   });
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({
-      error: { message: `HTTP ${response.status}` }
-    }));
-    throw new Error(`OpenAI API Error: ${err.error?.message || response.status}`);
+    const errData = await response.json().catch(() => ({ error: { message: `HTTP ${response.status} ${response.statusText}` } }));
+    logger.error("OpenAI API Error", errData.error ? errData.error : {message: response.statusText});
+    throw new Error(`OpenAI API Error: ${errData.error?.message || response.statusText}`);
   }
 
   const data = await response.json();
-  logger.log("OpenAI usage:", data.usage);
+  if (data.usage) {
+      logger.log("OpenAI usage:", data.usage);
+  } else {
+      logger.log("OpenAI response received, no usage data.", data);
+  }
 
   const raw = (data.choices?.[0]?.message?.content || "").trim();
 
   if (raw === "UNREADABLE_OR_NO_MCQ") {
+    playSound('aiUnreadableOrNoMCQ');
     return {
       extractedAnswer: null,
       statusMessage: "AI: Image unreadable or no MCQ found."
     };
   }
 
-  if (/^[A-Za-z0-9](\s*,\s*[A-Za-z0-9])*$/u.test(raw)) {
-    const answer = raw.replace(/\s+/g, "").toUpperCase();
+  if (/^[A-Za-z0-9]+(\s*,\s*[A-Za-z0-9]+)*$/u.test(raw.split('\n')[0].trim())) {
+    const answer = raw.split('\n')[0].trim().replace(/\s+/g, "").toUpperCase();
+    playSound('aiSuccess');
     return {
       extractedAnswer: answer,
       statusMessage: `AI Answer: ${answer}`
     };
   }
-
+  
+  playSound('aiFormatError');
   logger.log("AI response not in expected option format.", { rawResponse: raw });
   return {
     extractedAnswer: null,
@@ -609,9 +704,10 @@ const processFrame = async () => {
     updateStatus("Capturing...", 'info', true); const imgData=captureImage();
     if(!imgData){logger.error("Image capture failed for processing.");if(AppState.isProcessing)AppState.captureTimeout=setTimeout(processFrame,10000);updateStatus("Capture failed.",'error');updateUI();return;}
     try{
-        playSound('aiResponse'); 
+        playSound('aiProcessingStart'); 
         updateStatus("Analyzing RL Quiz (gpt-o4-mini)...", 'info', true);
-        const{extractedAnswer, statusMessage}=await solveMathProblem(imgData);
+        const{extractedAnswer, statusMessage}=await promiseWithTimeout(solveMathProblem(imgData), 45000, "AI analysis timed out after 45s.");
+        
         logger.log(`AI Status: ${statusMessage}`, { extractedOption: extractedAnswer });
         if(extractedAnswer){
             logger.success(`Extracted Option(s): ${extractedAnswer}`); 
@@ -642,12 +738,13 @@ const processFrame = async () => {
         }
     }catch(err){
         logger.error(`Processing error: ${err.message}`,err);
-        const isAPIKeyError = err.message.includes("API Key");
+        const isAPIKeyError = err.message.includes("API Key") || (err.message.includes("401") || err.message.includes("authentication"));
         if(isAPIKeyError){if(AppState.isProcessing)$('stopBtn').click(); updateStatus(`API Key Error. Please verify your key.`, 'critical');}
+        else if (err.message.includes("timed out")){ updateStatus(`AI analysis timed out. Try again.`, 'error');}
         else{updateStatus(`Error: ${err.message.substring(0,60)}...`,'error');}
     }finally{
         if(AppState.isProcessing){
-            if (AppState.videoTrack && !AppState.isInitializingCamera) { updateStatus("Ready for next. Aim.", 'info', false); }
+            if (AppState.videoTrack && !AppState.isInitializingCamera) { updateStatus("Ready for next. Hold phone horizontally.", 'info', false); }
             AppState.captureTimeout=setTimeout(processFrame,10000);
         }else{ updateUI(); }
     }
@@ -661,14 +758,14 @@ const toggleLogPanel = () => { AppState.isLogVisible=!AppState.isLogVisible; $('
 
 async function handleUserInteractionForAudio() { if (!AppState.toneStarted) { await startTone(); } }
 
-$('saveKeyBtn').onclick= async ()=>{ await handleUserInteractionForAudio(); if(AppState.isInitializingCamera||AppState.isProcessing)return;const kI=$('apiKey').value.trim();if(kI.startsWith("sk-")){AppState.apiKey=kI;try{localStorage.setItem("TV_API_KEY",kI);}catch(e){logger.error("localStorage error (save key).",e);}logger.success("API Key Saved!");if(!AppState.videoTrack && !AppState.isInitializingCamera){listCameras();}updateUI();}else{logger.error("Invalid API Key format. Must start with 'sk-'.");}};
+$('saveKeyBtn').onclick= async ()=>{ await handleUserInteractionForAudio(); if(AppState.isInitializingCamera||AppState.isProcessing)return;const kI=$('apiKey').value.trim();if(kI.startsWith("sk-")){AppState.apiKey=kI;try{localStorage.setItem("TV_API_KEY",kI);}catch(e){logger.error("localStorage error (save key).",e);}logger.success("API Key Saved!"); if(!AppState.videoTrack && !AppState.isInitializingCamera){listCameras();}updateUI();}else{logger.error("Invalid API Key format. Must start with 'sk-'.");}};
 $('changeKeyBtn').onclick=async ()=>{ await handleUserInteractionForAudio(); if(AppState.isInitializingCamera||AppState.isProcessing)return;$('apiKeyEntryRow').classList.remove('hidden-control');$('apiKeyDisplayRow').classList.add('hidden-control');$('apiKey').value=AppState.apiKey;$('apiKey').focus();updateUI();};
-$('clearKeyBtn').onclick=async ()=>{ await handleUserInteractionForAudio(); if(AppState.isInitializingCamera||AppState.isProcessing)return;logger.log("Clearing API Key.");AppState.apiKey="";try{localStorage.removeItem("TV_API_KEY");}catch(e){logger.error("localStorage error (clear key).",e);}$('apiKey').value="";if(AppState.isProcessing)$('stopBtn').click();releaseCamera();logger.success("API Key Cleared.");updateStatus("API Key cleared. Enter new key.", 'info');updateUI();};
+$('clearKeyBtn').onclick=async ()=>{ await handleUserInteractionForAudio(); if(AppState.isInitializingCamera||AppState.isProcessing)return;logger.log("Clearing API Key.");AppState.apiKey="";try{localStorage.removeItem("TV_API_KEY");}catch(e){logger.error("localStorage error (clear key).",e);}$('apiKey').value="";if(AppState.isProcessing)$('stopBtn').click();releaseCamera();logger.success("API Key Cleared."); updateStatus("API Key cleared. Enter new key.", 'info');updateUI();};
 $('zoomSlider').oninput=(e)=>{if(AppState.isInitializingCamera||!AppState.videoTrack)return;const z=parseFloat(e.target.value);$('zoomOutput').textContent=z.toFixed(1);AppState.currentZoom=z;updateZoomTypeIndicator();if(AppState.videoTrack&&AppState.cameraCapabilities.zoom&&z<=AppState.cameraCapabilities.zoom.max)AppState.videoTrack.applyConstraints({advanced:[{zoom:z}]}).catch(err=>logger.error(`Hardware zoom error`,err));};
 $('focusSlider').oninput=(e)=>{if(AppState.isInitializingCamera||!AppState.videoTrack)return;if(AppState.videoTrack&&AppState.cameraCapabilities.focus){const f=parseFloat(e.target.value);$('focusOutput').textContent=f.toFixed(2);AppState.videoTrack.applyConstraints({advanced:[{focusMode:'manual',focusDistance:f}]}).catch(err=>logger.error(`Focus error`,err));}};
 $('startBtn').onclick=async ()=>{ await handleUserInteractionForAudio(); if(AppState.isProcessing||AppState.isInitializingCamera||!AppState.videoTrack||!AppState.apiKey)return;AppState.isProcessing=true;logger.log("Processing started by user.");playSound('startAnalysis');updateStatus("Starting...",'info',true);updateUI();processFrame();};
-$('stopBtn').onclick=async ()=>{ await handleUserInteractionForAudio(); if(!AppState.isProcessing)return;AppState.isProcessing=false;clearTimeout(AppState.captureTimeout);speechSynthesis.cancel();logger.log("Processing stopped by user.");updateStatus("Stopped.",'info');updateUI();};
-$('copyLogBtn').onclick=async()=>{ await handleUserInteractionForAudio(); const logTxt=$('logTextarea').value;if(!logTxt.trim()){showToast("Log is empty.",'info');return;}try{await navigator.clipboard.writeText(logTxt);logger.success("Log copied to clipboard.");}catch(err){logger.error("Failed to copy log. Select manually.",err);$('logTextarea').select();$('logTextarea').setSelectionRange(0,999999);showToast("Log selected for manual copy.",'info');}updateUI();};
+$('stopBtn').onclick=async ()=>{ await handleUserInteractionForAudio(); if(!AppState.isProcessing)return;AppState.isProcessing=false;clearTimeout(AppState.captureTimeout);speechSynthesis.cancel();logger.log("Processing stopped by user.");playSound('toastInfo'); updateStatus("Stopped.",'info');updateUI();};
+$('copyLogBtn').onclick=async()=>{ await handleUserInteractionForAudio(); const logTxt=$('logTextarea').value;if(!logTxt.trim()){showToast("Log is empty.",'info');return;}try{await navigator.clipboard.writeText(logTxt);logger.success("Log copied to clipboard."); }catch(err){logger.error("Failed to copy log. Select manually.",err);$('logTextarea').select();$('logTextarea').setSelectionRange(0,999999);showToast("Log selected for manual copy.",'info');}updateUI();};
 $('verboseLogCheck').onchange=()=>{logger.log(`Verbose logging ${$('verboseLogCheck').checked?'enabled':'disabled'}.`);try{localStorage.setItem("TV_VERBOSE_LOG",$('verboseLogCheck').checked?'true':'false');}catch(e){logger.error("localStorage error (verbose).",e);}};
 $('toggleLogBtn').onclick = async () => { await handleUserInteractionForAudio(); toggleLogPanel(); };
 
