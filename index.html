@@ -230,6 +230,7 @@ const AppState = {
     toastTimeout: null,
     isLogVisible: false,
     toneStarted: false,
+    deviceOrientationAngle: 0, 
 };
 
 let sounds = {
@@ -455,7 +456,7 @@ const _initCameraWork = async (deviceId) => {
     const tracks = AppState.mediaStream.getVideoTracks();
     if (tracks.length === 0) throw new Error("No video tracks found in stream.");
     AppState.videoTrack = tracks[0];
-    logger.log(`Video track acquired: ${AppState.videoTrack.label}.`);
+    logger.log(`Video track acquired: ${AppState.videoTrack.label}. Settings: ${JSON.stringify(AppState.videoTrack.getSettings())}`);
     
     const videoEl = $('videoPreview'); videoEl.srcObject = AppState.mediaStream;
     await promiseWithTimeout(new Promise((resolve, reject) => {
@@ -536,9 +537,10 @@ const captureImage = () => {
         logger.error("Video not ready for capture."); return null;
     }
 
-    const videoIntrinsicWidth = videoEl.videoWidth; const videoIntrinsicHeight = videoEl.videoHeight;
+    const videoIntrinsicWidth = videoEl.videoWidth; 
+    const videoIntrinsicHeight = videoEl.videoHeight;
     const videoIntrinsicAR = videoIntrinsicWidth / videoIntrinsicHeight;
-    const targetFrameAR = 3 / 4;
+    const targetFrameAR = 3 / 4; 
 
     let sx = 0, sy = 0, sWidth = 0, sHeight = 0;
     if (videoIntrinsicAR > targetFrameAR) {
@@ -556,8 +558,32 @@ const captureImage = () => {
 
     if (sWidth <= 0 || sHeight <= 0) { logger.error("Calculated source crop dimensions invalid.", {sWidth, sHeight}); return null; }
     
-    const sourceCropCanvas = document.createElement('canvas'); sourceCropCanvas.width = sWidth; sourceCropCanvas.height = sHeight;
+    const sourceCropCanvas = document.createElement('canvas'); 
+    sourceCropCanvas.width = sWidth; 
+    sourceCropCanvas.height = sHeight;
     sourceCropCanvas.getContext('2d').drawImage(videoEl, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+
+    let canvasToProcess = sourceCropCanvas;
+    const angle = AppState.deviceOrientationAngle;
+
+    if (angle === 90 || angle === -90) {
+        const rotatedCanvas = document.createElement('canvas');
+        const rad = angle * Math.PI / 180;
+        
+        rotatedCanvas.width = sourceCropCanvas.height;
+        rotatedCanvas.height = sourceCropCanvas.width;
+        
+        const ctx = rotatedCanvas.getContext('2d');
+        if (angle === 90) {
+            ctx.translate(rotatedCanvas.width, 0);
+        } else {
+            ctx.translate(0, rotatedCanvas.height);
+        }
+        ctx.rotate(rad);
+        ctx.drawImage(sourceCropCanvas, 0, 0, sourceCropCanvas.width, sourceCropCanvas.height);
+        canvasToProcess = rotatedCanvas;
+        logger.log(`Image rotated by ${angle} degrees for AI.`);
+    }
     
     let effectiveDigitalZoom = 1;
     if (AppState.cameraCapabilities.zoom && AppState.currentZoom > AppState.cameraCapabilities.zoom.max) {
@@ -566,15 +592,22 @@ const captureImage = () => {
         effectiveDigitalZoom = AppState.currentZoom;
     }
     
-    const zoomedWidth = Math.floor(sWidth / effectiveDigitalZoom);
-    const zoomedHeight = Math.floor(sHeight / effectiveDigitalZoom);
+    const zoomedWidth = Math.floor(canvasToProcess.width / effectiveDigitalZoom);
+    const zoomedHeight = Math.floor(canvasToProcess.height / effectiveDigitalZoom);
     if (zoomedWidth <= 0 || zoomedHeight <= 0) { logger.error("Calculated digital zoom dimensions invalid.", {zoomedWidth, zoomedHeight}); return null; }
     
     const digitallyZoomedCanvas = document.createElement('canvas');
-    digitallyZoomedCanvas.width = zoomedWidth; digitallyZoomedCanvas.height = zoomedHeight;
-    digitallyZoomedCanvas.getContext('2d').drawImage(sourceCropCanvas, Math.floor((sWidth - zoomedWidth) / 2), Math.floor((sHeight - zoomedHeight) / 2), zoomedWidth, zoomedHeight, 0, 0, zoomedWidth, zoomedHeight);
+    digitallyZoomedCanvas.width = zoomedWidth; 
+    digitallyZoomedCanvas.height = zoomedHeight;
+    digitallyZoomedCanvas.getContext('2d').drawImage(
+        canvasToProcess, 
+        Math.floor((canvasToProcess.width - zoomedWidth) / 2), 
+        Math.floor((canvasToProcess.height - zoomedHeight) / 2), 
+        zoomedWidth, zoomedHeight, 
+        0, 0, zoomedWidth, zoomedHeight
+    );
     
-    const MAX_TARGET_HEIGHT = 1024;
+    const MAX_TARGET_HEIGHT = 1024; 
     let finalW = digitallyZoomedCanvas.width, finalH = digitallyZoomedCanvas.height;
 
     if (finalH > MAX_TARGET_HEIGHT) {
@@ -584,13 +617,15 @@ const captureImage = () => {
     }
     finalW = Math.max(1, finalW); finalH = Math.max(1, finalH);
     
-    const finalCanvas = document.createElement('canvas'); finalCanvas.width = finalW; finalCanvas.height = finalH;
+    const finalCanvas = document.createElement('canvas'); 
+    finalCanvas.width = finalW; 
+    finalCanvas.height = finalH;
     finalCanvas.getContext('2d').drawImage(digitallyZoomedCanvas, 0, 0, digitallyZoomedCanvas.width, digitallyZoomedCanvas.height, 0, 0, finalW, finalH);
     
     const imageDataUrl = finalCanvas.toDataURL('image/jpeg', 0.85);
     playSound('captureSuccess');
-    logger.log(`Image captured (sent: ${finalW}x${finalH}, size: ${Math.round(imageDataUrl.length/1024)}KB).`,
-                 {originalStream: `${videoIntrinsicWidth}x${videoIntrinsicHeight}`, targetCropAR: targetFrameAR.toFixed(2), calculatedCrop: `${sWidth}x${sHeight} from ${sx},${sy}`, digitalZoomFactor: effectiveDigitalZoom.toFixed(2)});
+    logger.log(`Image captured (sent: ${finalW}x${finalH}, aspect: ${(finalW/finalH).toFixed(2)}, size: ${Math.round(imageDataUrl.length/1024)}KB).`,
+                 {originalStream: `${videoIntrinsicWidth}x${videoIntrinsicHeight}`, targetCropAR: targetFrameAR.toFixed(2), calculatedCrop: `${sWidth}x${sHeight} from ${sx},${sy}`, deviceAngle: AppState.deviceOrientationAngle, digitalZoomFactor: effectiveDigitalZoom.toFixed(2)});
     return imageDataUrl;
 };
 
@@ -703,6 +738,57 @@ const toggleLogPanel = () => { AppState.isLogVisible = !AppState.isLogVisible; $
 
 async function handleUserInteractionForAudio() { if (!AppState.toneStarted) { await startToneContext(); } }
 
+function handleOrientation(event) {
+    const beta = event.beta; 
+    const gamma = event.gamma; 
+
+    if (beta === null || gamma === null) { return; }
+
+    const portraitMaxGamma = 25; 
+    const landscapeMinAbsGamma = 45; 
+    const landscapeMaxBeta = 25; 
+    
+    let newAngle = AppState.deviceOrientationAngle;
+
+    if (Math.abs(gamma) < portraitMaxGamma && Math.abs(beta) > landscapeMinAbsGamma) {
+        newAngle = 0; 
+    } else if (Math.abs(beta) < landscapeMaxBeta && Math.abs(gamma) > landscapeMinAbsGamma) {
+        if (gamma > landscapeMinAbsGamma) {
+            newAngle = 90; 
+        } else if (gamma < -landscapeMinAbsGamma) {
+            newAngle = -90; 
+        }
+    }
+    
+    if (AppState.deviceOrientationAngle !== newAngle) {
+        AppState.deviceOrientationAngle = newAngle;
+         logger.log(`Device orientation angle: ${AppState.deviceOrientationAngle}°`);
+    }
+}
+
+async function requestDeviceOrientationPermission() {
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const permissionState = await DeviceOrientationEvent.requestPermission();
+      if (permissionState === 'granted') {
+        window.addEventListener('deviceorientation', handleOrientation);
+        logger.log("Device orientation permission granted.");
+      } else {
+        logger.log("Device orientation permission not granted.");
+      }
+    } catch (error) {
+      logger.error("Error requesting device orientation permission (iOS). May need user gesture.", error);
+      window.addEventListener('deviceorientation', handleOrientation);
+    }
+  } else if (typeof DeviceOrientationEvent !== 'undefined'){
+    window.addEventListener('deviceorientation', handleOrientation);
+    logger.log("Standard device orientation listener added (non-iOS or no permission API).");
+  } else {
+    logger.log("DeviceOrientationEvent not supported by this browser.");
+  }
+}
+
+
 $('saveKeyBtn').onclick = async () => {
     await handleUserInteractionForAudio(); if(AppState.isInitializingCamera || AppState.isProcessing) return;
     const apiKeyInput = $('apiKey').value.trim();
@@ -710,6 +796,7 @@ $('saveKeyBtn').onclick = async () => {
         AppState.apiKey = apiKeyInput; try { localStorage.setItem("TV_API_KEY", apiKeyInput); } catch (e) { logger.error("localStorage error (save key).",e); }
         logger.success("API Key Saved!");
         if (!AppState.videoTrack && !AppState.isInitializingCamera) { listCameras(); } else { updateUI(); }
+        requestDeviceOrientationPermission(); 
     } else { logger.error("Invalid API Key format. Must start with 'sk-'."); }
 };
 $('changeKeyBtn').onclick = async () => {
@@ -739,6 +826,7 @@ $('focusSlider').oninput = (e) => {
 };
 $('startBtn').onclick = async () => {
     await handleUserInteractionForAudio(); if(AppState.isProcessing || AppState.isInitializingCamera || !AppState.videoTrack || !AppState.apiKey) return;
+    requestDeviceOrientationPermission();
     AppState.isProcessing = true; logger.log("Processing started by user."); playSound('startAnalysis');
     updateStatus("Starting...", 'info', true); updateUI(); processFrame();
 };
@@ -764,7 +852,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try { AppState.apiKey = localStorage.getItem("TV_API_KEY") || ""; } catch (e) { logger.error("localStorage error (load key).",e); AppState.apiKey = ""; }
     try { $('verboseLogCheck').checked = localStorage.getItem("TV_VERBOSE_LOG") === 'true'; } catch (e) { logger.error("localStorage error (load verbose).",e); }
     
-    if (AppState.apiKey) { listCameras(); }
+    if (AppState.apiKey) { 
+        listCameras(); 
+        requestDeviceOrientationPermission(); 
+    }
     else { updateStatus("Welcome!<br>Please enter OpenAI API Key to begin.", 'info'); }
     updateUI();
 });
