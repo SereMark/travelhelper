@@ -168,6 +168,15 @@ video { width: 100%; height: 100%; object-fit: cover; display: block; background
                     <button id="clearKeyBtn">Clear</button>
                 </div>
             </div>
+            <div id="modelToggleGroup" class="control-group hidden-control">
+                <label>Model:</label>
+                <div class="control-row">
+                    <select id="modelSelect">
+                        <option value="o3">o3 (GPT-4o)</option>
+                        <option value="o4-mini">o4-mini</option>
+                    </select>
+                </div>
+            </div>
             <div id="cameraControlsGroup" class="control-group hidden-control">
                 <label for="cameraSelect">Camera:</label>
                 <select id="cameraSelect" disabled></select>
@@ -230,7 +239,8 @@ const AppState = {
     toastTimeout: null,
     isLogVisible: false,
     toneStarted: false,
-    deviceOrientationAngle: 0, 
+    deviceOrientationAngle: 0,
+    selectedModel: "o3"
 };
 
 let sounds = {
@@ -374,6 +384,9 @@ const updateUI = () => {
     if (keyPresent) { $('apiKeyDisplay').textContent = `Key: sk-••••${AppState.apiKey.slice(-4)}`; }
     $('changeKeyBtn').disabled = AppState.isProcessing || AppState.isInitializingCamera;
     $('clearKeyBtn').disabled = AppState.isProcessing || AppState.isInitializingCamera;
+    
+    $('modelToggleGroup').classList.toggle('hidden-control', !keyPresent);
+    $('modelSelect').disabled = AppState.isProcessing || AppState.isInitializingCamera;
 
     const controlsDisabled = AppState.isInitializingCamera || AppState.isProcessing;
     $('cameraControlsGroup').classList.toggle('hidden-control', !AppState.cameraCapabilities.hasMultipleCameras || !AppState.videoTrack || AppState.isInitializingCamera);
@@ -631,13 +644,13 @@ const captureImage = () => {
 
 const solveMathProblem = async (imageDataUrl) => {
     if (!AppState.apiKey) throw new Error("API Key is missing.");
-    logger.log("Sending image to OpenAI (gpt-o3)...", { imageSizeKB: Math.round(imageDataUrl.length / 1024) });
+    logger.log(`Sending image to OpenAI (${AppState.selectedModel})...`, { imageSizeKB: Math.round(imageDataUrl.length / 1024) });
 
     const messages = [
         { role: "system", content: "You are an expert in Reinforcement Learning multiple-choice quizzes. Your primary goal is to determine the correct answer with the highest possible accuracy. Analyze the provided image meticulously. Consider all details, and take sufficient time to reason through the problem. After your thorough analysis, reply **on the FIRST line only** with the identifier(s) of the correct option(s) – letter or number – comma-separated if several (e.g. \"A\" or \"B, D\"). If the image is unreadable, no MCQ is found, or if you cannot determine the answer with high confidence, reply *only* with the exact phrase: UNREADABLE_OR_NO_MCQ" },
         { role: "user", content: [ { type: "text", text: "Please solve the MCQ in this image and respond as instructed above." }, { type: "image_url", image_url: { url: imageDataUrl, detail: "high" } } ] }
     ];
-    const payload = { model: "o3", reasoning_effort: "high", max_completion_tokens: 8000, messages };
+    const payload = { model: AppState.selectedModel, reasoning_effort: "high", max_completion_tokens: 8000, messages };
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${AppState.apiKey}` },
@@ -679,7 +692,7 @@ const processFrame = async () => {
     }
     try {
         playSound('aiProcessingStart');
-        updateStatus("Analyzing RL Quiz (gpt-o3)...", 'info', true);
+        updateStatus(`Analyzing RL Quiz (${AppState.selectedModel})...`, 'info', true);
         const { extractedAnswer, statusMessage } = await promiseWithTimeout(solveMathProblem(imgData), 120000, "AI analysis timed out after 120s.");
         
         logger.log(`AI Status: ${statusMessage}`, { extractedOption: extractedAnswer });
@@ -847,10 +860,26 @@ $('verboseLogCheck').onchange = () => {
 };
 $('toggleLogBtn').onclick = async () => { await handleUserInteractionForAudio(); toggleLogPanel(); };
 
+$('modelSelect').onchange = async () => {
+    await handleUserInteractionForAudio(); 
+    if(AppState.isInitializingCamera || AppState.isProcessing) return;
+    AppState.selectedModel = $('modelSelect').value;
+    try { localStorage.setItem("TV_MODEL", AppState.selectedModel); } catch (e) { logger.error("localStorage error (save model).",e); }
+    logger.success(`Model changed to ${AppState.selectedModel}`);
+    showToast(`Model: ${AppState.selectedModel}`, 'info');
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     updateStatus("Initializing app...", 'info');
     try { AppState.apiKey = localStorage.getItem("TV_API_KEY") || ""; } catch (e) { logger.error("localStorage error (load key).",e); AppState.apiKey = ""; }
     try { $('verboseLogCheck').checked = localStorage.getItem("TV_VERBOSE_LOG") === 'true'; } catch (e) { logger.error("localStorage error (load verbose).",e); }
+    try { 
+        const savedModel = localStorage.getItem("TV_MODEL");
+        if (savedModel && (savedModel === "o3" || savedModel === "o4-mini")) {
+            AppState.selectedModel = savedModel;
+            $('modelSelect').value = savedModel;
+        }
+    } catch (e) { logger.error("localStorage error (load model).",e); }
     
     if (AppState.apiKey) { 
         listCameras(); 
