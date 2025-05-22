@@ -519,41 +519,57 @@ const captureImage = () => {
 };
 
 const solveMathProblem = async (imageDataUrl) => {
-  if (!AppState.apiKey) throw new Error("API Key is missing.");
+  if (!AppState.apiKey) {
+    throw new Error("API Key is missing.");
+  }
 
-  const prompt = `You are an RL expert.
-Read the multiple-choice question in the image.
-Reply on the FIRST line ONLY with the correct option identifier(s)
-(letter or number, comma-separated if several). Then write the word END.
-If the image is unreadable or no MCQ, reply exactly:
-UNREADABLE_OR_NO_MCQ END`;
+  logger.log("Sending image to OpenAI (o4-mini, high reasoning)…", {
+    imageSizeKB: Math.round(imageDataUrl.length / 1024)
+  });
 
-  const controller = new AbortController();
+  /** ──────────────────────── 1. Build Chat payload ──────────────────────── */
+  const messages = [
+    {
+      role: "system",
+      content:
+        `You are an expert in Reinforcement Learning multiple-choice quizzes. ` +
+        `After inspecting the image you will reply **on the FIRST line only** ` +
+        `with the identifier(s) of the correct option(s) – letter or number – ` +
+        `comma-separated if several (e.g. "A"  or "B, D").  ` +
+        `If the image is unreadable or no MCQ is found, reply exactly: ` +
+        `UNREADABLE_OR_NO_MCQ`
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text:
+            `Please solve the MCQ in this image and respond as instructed above.` // short = cheaper tokens
+        },
+        {
+          type: "image_url",
+          image_url: { url: imageDataUrl, detail: "auto" }
+        }
+      ]
+    }
+  ];
+
   const payload = {
     model: "o4-mini",
     reasoning_effort: "high",
-    max_completion_tokens: 4096,
-    stream: true,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text",  text: prompt },
-          { type: "image_url",
-            image_url: { url: imageDataUrl, detail: "auto" } }
-        ]
-      }
-    ]
+    max_completion_tokens: 2000,   // plenty; response itself is < 10 tokens
+    messages
   };
 
+  /** ────────────────────────── 2. Call the API ─────────────────────────── */
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${AppState.apiKey}`
+      "Authorization": `Bearer ${AppState.apiKey}`
     },
-    body: JSON.stringify(payload),
-    signal: controller.signal
+    body: JSON.stringify(payload)
   });
 
   if (!response.ok) {
@@ -563,37 +579,31 @@ UNREADABLE_OR_NO_MCQ END`;
     throw new Error(`OpenAI API Error: ${err.error?.message || response.status}`);
   }
 
-  const answerBuf = [];
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
+  const data = await response.json();
+  logger.log("OpenAI usage:", data.usage);
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    answerBuf.push(decoder.decode(value));
-    if (answerBuf.join("").includes(" END")) {
-      controller.abort();
-      break;
-    }
-  }
+  /** ───────────────────────── 3. Parse the reply ───────────────────────── */
+  const raw = (data.choices?.[0]?.message?.content || "").trim();
 
-  const firstLine = answerBuf
-    .join("")
-    .split("\n")[0]
-    .replace(" END", "")
-    .trim();
-
-  if (firstLine === "UNREADABLE_OR_NO_MCQ") {
-    return { extractedAnswer: null, statusMessage: firstLine };
-  }
-
-  if (/^[A-Za-z0-9](,\s*[A-Za-z0-9])*$/.test(firstLine)) {
+  // Special unreadable marker
+  if (raw === "UNREADABLE_OR_NO_MCQ") {
     return {
-      extractedAnswer: firstLine.toUpperCase(),
-      statusMessage: `AI Answer: ${firstLine.toUpperCase()}`
+      extractedAnswer: null,
+      statusMessage: "AI: Image unreadable or no MCQ found."
     };
   }
 
+  // Valid answer pattern: single letter/number or comma-separated list
+  if (/^[A-Za-z0-9](\s*,\s*[A-Za-z0-9])*$/u.test(raw)) {
+    const answer = raw.replace(/\s+/g, "").toUpperCase(); // tidy formatting
+    return {
+      extractedAnswer: answer,
+      statusMessage: `AI Answer: ${answer}`
+    };
+  }
+
+  // Anything else → unexpected
+  logger.log("AI response not in expected option format.", { rawResponse: raw });
   return {
     extractedAnswer: null,
     statusMessage: "AI response format unexpected (see log)."
