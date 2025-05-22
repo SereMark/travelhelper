@@ -637,7 +637,7 @@ const solveMathProblem = async (imageDataUrl) => {
         { role: "system", content: "You are an expert in Reinforcement Learning multiple-choice quizzes. Your primary goal is to determine the correct answer with the highest possible accuracy. Analyze the provided image meticulously. Consider all details, and take sufficient time to reason through the problem. After your thorough analysis, reply **on the FIRST line only** with the identifier(s) of the correct option(s) – letter or number – comma-separated if several (e.g. \"A\" or \"B, D\"). If the image is unreadable, no MCQ is found, or if you cannot determine the answer with high confidence, reply *only* with the exact phrase: UNREADABLE_OR_NO_MCQ" },
         { role: "user", content: [ { type: "text", text: "Please solve the MCQ in this image and respond as instructed above." }, { type: "image_url", image_url: { url: imageDataUrl, detail: "high" } } ] }
     ];
-    const payload = { model: "o4-mini", reasoning_effort: "high", max_completion_tokens: 5000, messages };
+    const payload = { model: "o3", reasoning_effort: "high", max_completion_tokens: 5000, messages };
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${AppState.apiKey}` },
