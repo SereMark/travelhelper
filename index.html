@@ -631,7 +631,7 @@ const captureImage = () => {
 
 const solveMathProblem = async (imageDataUrl) => {
     if (!AppState.apiKey) throw new Error("API Key is missing.");
-    logger.log("Sending image to OpenAI (gpt-4o-mini)...", { imageSizeKB: Math.round(imageDataUrl.length / 1024) });
+    logger.log("Sending image to OpenAI (gpt-o3)...", { imageSizeKB: Math.round(imageDataUrl.length / 1024) });
 
     const messages = [
         { role: "system", content: "You are an expert in Reinforcement Learning multiple-choice quizzes. Your primary goal is to determine the correct answer with the highest possible accuracy. Analyze the provided image meticulously. Consider all details, and take sufficient time to reason through the problem. After your thorough analysis, reply **on the FIRST line only** with the identifier(s) of the correct option(s) – letter or number – comma-separated if several (e.g. \"A\" or \"B, D\"). If the image is unreadable, no MCQ is found, or if you cannot determine the answer with high confidence, reply *only* with the exact phrase: UNREADABLE_OR_NO_MCQ" },
@@ -679,7 +679,7 @@ const processFrame = async () => {
     }
     try {
         playSound('aiProcessingStart');
-        updateStatus("Analyzing RL Quiz (gpt-4o-mini)...", 'info', true);
+        updateStatus("Analyzing RL Quiz (gpt-o3)...", 'info', true);
         const { extractedAnswer, statusMessage } = await promiseWithTimeout(solveMathProblem(imgData), 45000, "AI analysis timed out after 45s.");
         
         logger.log(`AI Status: ${statusMessage}`, { extractedOption: extractedAnswer });
