@@ -527,7 +527,6 @@ const solveMathProblem = async (imageDataUrl) => {
     imageSizeKB: Math.round(imageDataUrl.length / 1024)
   });
 
-  /** ──────────────────────── 1. Build Chat payload ──────────────────────── */
   const messages = [
     {
       role: "system",
@@ -545,7 +544,7 @@ const solveMathProblem = async (imageDataUrl) => {
         {
           type: "text",
           text:
-            `Please solve the MCQ in this image and respond as instructed above.` // short = cheaper tokens
+            `Please solve the MCQ in this image and respond as instructed above.`
         },
         {
           type: "image_url",
@@ -558,11 +557,10 @@ const solveMathProblem = async (imageDataUrl) => {
   const payload = {
     model: "o4-mini",
     reasoning_effort: "high",
-    max_completion_tokens: 2000,   // plenty; response itself is < 10 tokens
+    max_completion_tokens: 3000,
     messages
   };
 
-  /** ────────────────────────── 2. Call the API ─────────────────────────── */
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -582,10 +580,8 @@ const solveMathProblem = async (imageDataUrl) => {
   const data = await response.json();
   logger.log("OpenAI usage:", data.usage);
 
-  /** ───────────────────────── 3. Parse the reply ───────────────────────── */
   const raw = (data.choices?.[0]?.message?.content || "").trim();
 
-  // Special unreadable marker
   if (raw === "UNREADABLE_OR_NO_MCQ") {
     return {
       extractedAnswer: null,
@@ -593,16 +589,14 @@ const solveMathProblem = async (imageDataUrl) => {
     };
   }
 
-  // Valid answer pattern: single letter/number or comma-separated list
   if (/^[A-Za-z0-9](\s*,\s*[A-Za-z0-9])*$/u.test(raw)) {
-    const answer = raw.replace(/\s+/g, "").toUpperCase(); // tidy formatting
+    const answer = raw.replace(/\s+/g, "").toUpperCase();
     return {
       extractedAnswer: answer,
       statusMessage: `AI Answer: ${answer}`
     };
   }
 
-  // Anything else → unexpected
   logger.log("AI response not in expected option format.", { rawResponse: raw });
   return {
     extractedAnswer: null,
