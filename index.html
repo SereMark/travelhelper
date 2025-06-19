@@ -364,19 +364,17 @@ class VisionAudioSolver {
             return this._handleError("API Keys are not set in settings.");
         }
 
+        this._setState('CAPTURING');
         try {
-            this._setState('CAPTURING');
-            this._speak("Scanning");
             const imageData = this._captureImage();
 
             this._setState('EXTRACTING');
-            this._speak("Extracting questions");
-            const extractedQuestions = await this._api.openai.extract(imageData, this.settings.openai);
+            const extractedQuestions = await this._performExtractionWithRetries(imageData);
             
             if (extractedQuestions.length === 0) {
-                throw new Error("No questions found in the image.");
+                throw new Error("No questions found in the image after all attempts.");
             }
-            this._log(`Found ${extractedQuestions.length} question(s).`, 'success');
+            this._log(`Extraction successful. Found ${extractedQuestions.length} question(s).`, 'success');
 
             this._setState('SOLVING_BATCH');
             this._speak(`Solving with Gemini 2.5 Pro`);
@@ -396,6 +394,36 @@ class VisionAudioSolver {
         } catch (err) {
             this._handleError(err.message);
         }
+    }
+
+    async _performExtractionWithRetries(imageData) {
+        const MAX_ATTEMPTS = 3;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            this._speak(attempt === 1 ? "Extracting questions" : `Scan failed, trying again...`);
+            this._log(`Extraction attempt ${attempt}/${MAX_ATTEMPTS}...`);
+            
+            const { questions, finishDetails } = await this._api.openai.extract(imageData, this.settings.openai);
+
+            // Check for a successful result first.
+            if (questions.length > 0) {
+                return questions;
+            }
+
+            // If no questions, log the reason and decide whether to retry.
+            const reason = finishDetails?.type || 'unknown_reason';
+            this._log(`Attempt ${attempt} resulted in 0 questions. Finish reason: ${reason}`, 'warning');
+
+            if (reason === 'stop' || reason === 'length') {
+                 // If the model stopped cleanly but found nothing, further retries are unlikely to help.
+                 break;
+            }
+
+            // For content filters or other issues, wait and retry.
+            if (attempt < MAX_ATTEMPTS) {
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retrying
+            }
+        }
+        return []; // Return an empty array if all attempts fail
     }
 
     _handleError(errorMessage) {
@@ -505,7 +533,7 @@ class VisionAudioSolver {
     _api = {
         openai: {
             extract: async (imageData, apiKey) => {
-                this._log("Calling OpenAI GPT-4o to extract questions...");
+                this._log("Calling OpenAI GPT-4o...");
                 const prompt = `You are an expert at analyzing images. Your task is to find all distinct multiple-choice questions in the provided image. Your entire response MUST be a single, valid JSON array. Each object in the array must have a "number" (integer) and a "text" (string) key. Do not include any other text, explanations, or markdown formatting. Example: [{"number": 21, "text": "What is...?"}, {"number": 22, "text": "Which of..."}]`;
                 
                 const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -527,20 +555,19 @@ class VisionAudioSolver {
 
                 const data = await response.json();
                 
-                // *** FIX: Safely access the content and handle null response ***
+                // *** DEFINITIVE FIX: Safely access content and return finish details ***
                 const rawContent = data?.choices?.[0]?.message?.content;
+                const finishDetails = data?.choices?.[0]?.finish_details || { type: 'unknown' };
                 
                 if (!rawContent) {
-                    this._log("AI response content is null or empty.", 'error');
-                    throw new Error("AI response content is null or empty.");
+                    return { questions: [], finishDetails };
                 }
 
                 this._log(`Received raw content from OpenAI: ${rawContent}`, 'info');
-
                 const jsonMatch = rawContent.match(/{[\s\S]*}|\[[\s\S]*\]/);
 
                 if (!jsonMatch) {
-                    throw new Error("Could not find a valid JSON object or array in the AI response.");
+                    return { questions: [], finishDetails };
                 }
                 
                 const jsonString = jsonMatch[0];
@@ -549,22 +576,18 @@ class VisionAudioSolver {
                     parsedContent = JSON.parse(jsonString);
                 } catch(e) {
                     this._log(`Failed to parse extracted JSON string: ${e.message}`, 'error');
-                    throw new Error("Failed to parse the JSON extracted from the AI response.");
+                    return { questions: [], finishDetails };
                 }
 
                 if (Array.isArray(parsedContent)) {
-                    this._log("OpenAI extraction successful (direct array).", 'success');
-                    return parsedContent;
+                    return { questions: parsedContent, finishDetails };
                 }
                 if (typeof parsedContent === 'object' && parsedContent !== null) {
                     const arrayValue = Object.values(parsedContent).find(v => Array.isArray(v));
-                    if (arrayValue) {
-                        this._log("OpenAI extraction successful (nested array).", 'success');
-                        return arrayValue;
-                    }
+                    if (arrayValue) return { questions: arrayValue, finishDetails };
                 }
                 
-                throw new Error("AI response was a valid JSON object, but contained no question array.");
+                return { questions: [], finishDetails };
             }
         },
         gemini: {
