@@ -348,7 +348,7 @@ class VisionAudioSolver {
             this._log('App Ready.', 'success');
             this._setState('IDLE');
         } catch (err) {
-            this._handleError(err.message, false); // Don't stop loop on init error
+            this._handleError(err.message, false);
         }
     }
     
@@ -369,30 +369,29 @@ class VisionAudioSolver {
     _setState(newState) {
         this.state = newState;
         this._log(`State changed to: ${newState}`, 'info');
-        // The button's active state is now controlled by isContinuousMode
     }
 
     toggleContinuousScan() {
+        this.isContinuousMode = !this.isContinuousMode;
         if (this.isContinuousMode) {
-            // Stop the loop
-            this.isContinuousMode = false;
+            this._log("Continuous scan loop ACTIVATED by user.", 'info');
+            this.dom.toggleBtn.classList.add('active');
+            this.startScan();
+        } else {
+            this._log("Continuous scan loop DEACTIVATED by user.", 'warning');
             this.dom.toggleBtn.classList.remove('active');
             clearTimeout(this.scanLoopTimer);
             speechSynthesis.cancel();
-            this._speak("Continuous scan stopped.");
-            this._log("Continuous scan loop deactivated by user.", 'warning');
+            if (this.state !== 'IDLE') {
+                this._speak("Scan cancelled.");
+            }
             this._setState('IDLE');
-        } else {
-            // Start the loop
-            this.isContinuousMode = true;
-            this.dom.toggleBtn.classList.add('active');
-            this._log("Continuous scan loop activated by user.", 'info');
-            this.startScan();
         }
     }
 
     async startScan() {
-        if (this.state !== 'IDLE' && this.state !== 'ERROR' && this.state !== 'WAITING') return;
+        if (!this.isContinuousMode) return;
+        if (this.state !== 'IDLE' && this.state !== 'WAITING' && this.state !== 'ERROR') return;
         
         if (!this.settings.openai || !this.settings.gemini) {
             return this._handleError("API Keys are not set in settings.");
@@ -406,9 +405,15 @@ class VisionAudioSolver {
             this._setState('EXTRACTING');
             const extractedQuestions = await this._api.openai.extract(imageData, this.settings.openai);
             
+            // *** PERFECTION: Gracefully handle an empty scan without erroring ***
             if (extractedQuestions.length === 0) {
-                throw new Error("Extraction failed after all attempts.");
+                this._log("No questions found in the current view. Continuing loop.", 'info');
+                this._speak("No questions found, trying again.", () => {
+                    this._enterWaitState();
+                });
+                return; // Stop this cycle and wait for the next one
             }
+
             this._log(`Extraction successful. Found ${extractedQuestions.length} question(s).`, 'success');
 
             this._setState('SOLVING_BATCH');
@@ -424,33 +429,35 @@ class VisionAudioSolver {
             speechText += "Scan complete.";
             
             this._log("Scan cycle completed successfully.", 'success');
-            
-            this._speak(speechText, () => {
-                // This callback runs after speech finishes
-                if (this.isContinuousMode) {
-                    this._setState('WAITING');
-                    this._log('Entering 5-second wait before next scan...');
-                    this.scanLoopTimer = setTimeout(() => {
-                        this.startScan();
-                    }, 5000);
-                } else {
-                    this._setState('IDLE');
-                }
-            });
+            this._speak(speechText, () => this._enterWaitState());
 
         } catch (err) {
             this._handleError(err.message);
         }
     }
 
+    _enterWaitState() {
+        if (!this.isContinuousMode) {
+            this._setState('IDLE');
+            return;
+        }
+        this._setState('WAITING');
+        this._log('Entering 5-second wait before next scan...');
+        this.scanLoopTimer = setTimeout(() => {
+            if (this.isContinuousMode) {
+                this.startScan();
+            }
+        }, 5000);
+    }
+
     _handleError(errorMessage, stopLoop = true) {
         this._log(errorMessage, 'error');
         this._speak(`Error. Check the logs.`);
         this._setState('ERROR');
-        if (stopLoop) {
+        if (stopLoop && this.isContinuousMode) {
             this.isContinuousMode = false;
             this.dom.toggleBtn.classList.remove('active');
-            this._log("Continuous scan loop stopped due to error.", 'error');
+            this._log("Continuous scan loop stopped due to critical error.", 'error');
         }
     }
 
@@ -539,10 +546,10 @@ class VisionAudioSolver {
         speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 1.0;
-        utterance.onend = onEndCallback; // Trigger callback when speech finishes
+        utterance.onend = onEndCallback;
         utterance.onerror = (event) => {
             this._log(`Speech error: ${event.error}`, 'error');
-            if(onEndCallback) onEndCallback(); // Ensure loop continues even if speech fails
+            if(onEndCallback) onEndCallback();
         };
         speechSynthesis.speak(utterance);
     }
@@ -564,12 +571,12 @@ class VisionAudioSolver {
     
     _copyLogsToClipboard() {
         this._log("Copying logs to clipboard...");
-        const logText = this.dom.logContainer.innerText; // .innerText preserves line breaks
+        const logText = this.dom.logContainer.innerText;
 
         navigator.clipboard.writeText(logText).then(() => {
             this._log('Logs copied successfully!', 'success');
             const btn = this.dom.copyLogsBtn;
-            if (btn.classList.contains('copied')) return; // Prevent re-triggering animation
+            if (btn.classList.contains('copied')) return;
             
             btn.textContent = "Copied!";
             btn.classList.add('copied');
@@ -599,7 +606,7 @@ class VisionAudioSolver {
                         try {
                             const parsedContent = JSON.parse(jsonMatch[0]);
                             if (parsedContent?.questions && Array.isArray(parsedContent.questions)) {
-                                this._log(`JSON extraction successful. Method: ${Array.isArray(parsedContent.questions) ? 'Direct Array' : 'Nested Object'}.`, 'success');
+                                this._log(`JSON extraction successful. Found ${parsedContent.questions.length} question(s).`, 'success');
                                 return parsedContent.questions;
                             }
                         } catch (e) {
