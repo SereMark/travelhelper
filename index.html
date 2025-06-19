@@ -303,8 +303,26 @@ class VisionAudioSolver {
         this._log('App Initializing...');
         this._bindEvents();
         try {
-            await this._enumerateCameras();
-            await this._startCamera(this.settings.cameraId);
+            // *** CAMERA FIX: Robust initialization sequence ***
+            const cameraDevices = await this._enumerateCameras();
+            let deviceIdToUse = this.settings.cameraId;
+
+            // Check if saved camera is valid, otherwise use the first available one.
+            if (!deviceIdToUse || !cameraDevices.some(d => d.deviceId === deviceIdToUse)) {
+                this._log('Saved camera not found or not set. Using first available camera.', 'warning');
+                deviceIdToUse = cameraDevices[0]?.deviceId;
+                if (deviceIdToUse) {
+                    // Update settings with the new valid default
+                    this.settings.cameraId = deviceIdToUse;
+                    localStorage.setItem('vision_solver_camera', deviceIdToUse);
+                }
+            }
+
+            if (!deviceIdToUse) {
+                throw new Error("No camera devices were found.");
+            }
+            
+            await this._startCamera(deviceIdToUse);
             this._log('App Ready.', 'success');
             this._setState('IDLE');
         } catch (err) {
@@ -335,14 +353,14 @@ class VisionAudioSolver {
         if (this.state === 'IDLE' || this.state === 'ERROR') {
             this.startScan();
         } else {
-            speechSynthesis.cancel(); // Stop any ongoing speech
+            speechSynthesis.cancel();
             this._speak("Scan cancelled.");
             this._setState('IDLE');
         }
     }
 
     async startScan() {
-        if (this.state !== 'IDLE' && this.state !== 'ERROR') return; // Prevent multiple concurrent scans
+        if (this.state !== 'IDLE' && this.state !== 'ERROR') return;
         
         if (!this.settings.openai || !this.settings.gemini) {
             return this._handleError("API Keys are not set in settings.");
@@ -384,7 +402,7 @@ class VisionAudioSolver {
 
     _handleError(errorMessage) {
         this._log(errorMessage, 'error');
-        this._speak(`Error: ${errorMessage.substring(0, 100)}`);
+        this._speak(`Error. Check the logs.`);
         this._setState('ERROR');
     }
 
@@ -392,18 +410,17 @@ class VisionAudioSolver {
 
     async _enumerateCameras() {
         this._log("Enumerating cameras...");
-        try {
-            await navigator.mediaDevices.getUserMedia({video: true}); // Request permission
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const videoDevices = devices.filter(d => d.kind === 'videoinput');
-            if (videoDevices.length === 0) throw new Error("No cameras found.");
+        await navigator.mediaDevices.getUserMedia({video: true}); // Request permission first
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
 
+        if (videoDevices.length > 0) {
             this.dom.cameraSelect.innerHTML = videoDevices.map(d => `<option value="${d.deviceId}">${d.label || `Camera ${videoDevices.indexOf(d)+1}`}</option>`).join('');
-            this.dom.cameraSelect.value = this.settings.cameraId || videoDevices[0].deviceId;
             this._log(`Found ${videoDevices.length} cameras.`, 'success');
-        } catch(err) {
-            this._handleError("Could not access camera devices.");
+        } else {
+            this._log("No cameras found.", 'error');
         }
+        return videoDevices; // Return the list for the initializer
     }
 
     async _startCamera(deviceId) {
@@ -412,7 +429,7 @@ class VisionAudioSolver {
             this.cameraStream.getTracks().forEach(track => track.stop());
         }
         try {
-            const constraints = { video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1920 }, height: { ideal: 1080 } } };
+            const constraints = { video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } } };
             this.cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
             this.dom.camera.srcObject = this.cameraStream;
             await this.dom.camera.play();
@@ -420,7 +437,7 @@ class VisionAudioSolver {
             this._setupZoom();
             this._log("Camera started successfully.", "success");
         } catch (err) {
-            this._handleError(`Failed to start camera: ${err.name}`);
+            throw new Error(`Failed to start camera: ${err.name}`);
         }
     }
 
@@ -438,7 +455,6 @@ class VisionAudioSolver {
             this.dom.zoomControl.classList.add('show');
         } else {
             this.dom.zoomControl.classList.remove('show');
-            this._log("Zoom not supported by this camera.", 'warning');
         }
     }
     
@@ -466,7 +482,7 @@ class VisionAudioSolver {
     _speak(text) {
         this._log(`Speaking: "${text}"`, 'info');
         if (!('speechSynthesis' in window)) return this._log("Speech synthesis not supported.", 'error');
-        speechSynthesis.cancel(); // Ensure no overlapping speech
+        speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 1.0;
         speechSynthesis.speak(utterance);
@@ -476,12 +492,10 @@ class VisionAudioSolver {
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit'});
         const consoleMessage = `[${timestamp}] ${message}`;
         
-        // Log to browser console for deeper debugging
         if (type === 'error') console.error(consoleMessage);
         else if (type === 'warning') console.warn(consoleMessage);
         else console.log(consoleMessage);
         
-        // Log to UI log container
         const entry = document.createElement('div');
         entry.className = `log-entry ${type}`;
         entry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${message}`;
@@ -494,7 +508,6 @@ class VisionAudioSolver {
             extract: async (imageData, apiKey) => {
                 this._log("Calling OpenAI GPT-4o to extract questions...");
                 const prompt = `Analyze the image to find all distinct multiple-choice questions. Return a JSON array where each object has "number" (int) and "text" (string) keys. Example: [{"number": 21, "text": "What is...?"}, {"number": 22, "text": "Which of..."}]. Respond ONLY with the JSON array.`;
-
                 const response = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -504,12 +517,23 @@ class VisionAudioSolver {
                         response_format: { type: "json_object" }
                     })
                 });
-                if (!response.ok) throw new Error(`OpenAI API Error: ${response.statusText}`);
+                
+                // *** API FIX: Detailed error logging ***
+                if (!response.ok) {
+                    let errorBody;
+                    try {
+                        errorBody = await response.json();
+                    } catch (e) {
+                        throw new Error(`HTTP Error ${response.status} ${response.statusText}`);
+                    }
+                    const message = errorBody.error?.message || JSON.stringify(errorBody);
+                    throw new Error(`OpenAI API Error: ${response.status} - ${message}`);
+                }
+
                 const data = await response.json();
                 const resultObject = JSON.parse(data.choices[0].message.content);
-                // Handle cases where the key might be dynamic
                 const result = Object.values(resultObject).find(v => Array.isArray(v));
-                if(!result) throw new Error("AI did not return a valid question array.");
+                if(!result) throw new Error("AI did not return a valid question array from JSON response.");
                 this._log("OpenAI extraction successful.", 'success');
                 return result;
             }
@@ -528,7 +552,19 @@ class VisionAudioSolver {
                         generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
                     })
                 });
-                if (!response.ok) throw new Error(`Gemini 2.5 Pro Error: ${response.statusText}`);
+
+                // *** API FIX: Detailed error logging ***
+                if (!response.ok) {
+                    let errorBody;
+                    try {
+                        errorBody = await response.json();
+                    } catch (e) {
+                        throw new Error(`HTTP Error ${response.status} ${response.statusText}`);
+                    }
+                    const message = errorBody.error?.message || JSON.stringify(errorBody);
+                    throw new Error(`Gemini API Error: ${response.status} - ${message}`);
+                }
+
                 const data = await response.json();
                 this._log("Gemini batch solve successful.", 'success');
                 return JSON.parse(data.candidates[0].content.parts[0].text);
@@ -558,7 +594,7 @@ class VisionAudioSolver {
             this._log("Camera selection changed.", 'info');
             this.settings.cameraId = newCameraId;
             localStorage.setItem('vision_solver_camera', this.settings.cameraId);
-            await this._startCamera(this.settings.cameraId); // Restart camera with new selection
+            await this._startCamera(this.settings.cameraId);
         }
         
         this.dom.settingsPanel.classList.remove('open');
