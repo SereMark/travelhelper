@@ -526,19 +526,24 @@ class VisionAudioSolver {
                 }
 
                 const data = await response.json();
-                const rawContent = data.choices[0].message.content;
+                
+                // *** FIX: Safely access the content and handle null response ***
+                const rawContent = data?.choices?.[0]?.message?.content;
+                
+                if (!rawContent) {
+                    this._log("AI response content is null or empty.", 'error');
+                    throw new Error("AI response content is null or empty.");
+                }
+
                 this._log(`Received raw content from OpenAI: ${rawContent}`, 'info');
 
-                // *** FIX: Robustly find and parse the JSON block to prevent all errors ***
-                const jsonMatch = rawContent.match(/{[\s\S]*}/); // Find a JSON object
-                const jsonArrayMatch = rawContent.match(/\[[\s\S]*\]/); // Find a JSON array
+                const jsonMatch = rawContent.match(/{[\s\S]*}|\[[\s\S]*\]/);
 
-                const jsonString = jsonArrayMatch ? jsonArrayMatch[0] : (jsonMatch ? jsonMatch[0] : null);
-
-                if (!jsonString) {
+                if (!jsonMatch) {
                     throw new Error("Could not find a valid JSON object or array in the AI response.");
                 }
                 
+                const jsonString = jsonMatch[0];
                 let parsedContent;
                 try {
                     parsedContent = JSON.parse(jsonString);
