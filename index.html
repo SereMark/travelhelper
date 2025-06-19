@@ -366,13 +366,14 @@ class VisionAudioSolver {
 
         this._setState('CAPTURING');
         try {
+            this._speak("Scanning");
             const imageData = this._captureImage();
 
             this._setState('EXTRACTING');
-            const extractedQuestions = await this._performExtractionWithRetries(imageData);
+            const extractedQuestions = await this._api.openai.extract(imageData, this.settings.openai);
             
             if (extractedQuestions.length === 0) {
-                throw new Error("No questions found in the image after all attempts.");
+                throw new Error("Extraction failed after all attempts.");
             }
             this._log(`Extraction successful. Found ${extractedQuestions.length} question(s).`, 'success');
 
@@ -394,37 +395,6 @@ class VisionAudioSolver {
         } catch (err) {
             this._handleError(err.message);
         }
-    }
-
-    async _performExtractionWithRetries(imageData) {
-        const MAX_ATTEMPTS = 3;
-        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            this._speak(attempt === 1 ? "Extracting questions" : "Retrying extraction...");
-            this._log(`Extraction attempt ${attempt}/${MAX_ATTEMPTS}...`);
-            
-            const { questions, finishDetails } = await this._api.openai.extract(imageData, this.settings.openai);
-
-            if (questions.length > 0) {
-                return questions; // Success
-            }
-
-            const reason = finishDetails?.type || 'unknown';
-            this._log(`Attempt ${attempt} failed. Finish reason: ${reason}`, 'warning');
-            
-            if (reason === 'content_filter') {
-                this._speak("Image flagged by content filter.");
-            }
-            
-            if (reason === 'stop') {
-                this._log('AI stopped cleanly but found no content. Halting retries.', 'warning');
-                break;
-            }
-
-            if (attempt < MAX_ATTEMPTS) {
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retry
-            }
-        }
-        return []; // Return empty if all attempts fail
     }
 
     _handleError(errorMessage) {
@@ -470,7 +440,8 @@ class VisionAudioSolver {
 
     _setupZoom() {
         if (!this.videoTrack?.getCapabilities) {
-            return this.dom.zoomControl.classList.remove('show');
+            this.dom.zoomControl.classList.remove('show');
+            return;
         }
         const capabilities = this.videoTrack.getCapabilities();
         if (capabilities.zoom) {
@@ -533,18 +504,63 @@ class VisionAudioSolver {
 
     _api = {
         openai: {
+            // *** THE DEFINITIVE, BULLETPROOF EXTRACTION FUNCTION ***
             extract: async (imageData, apiKey) => {
-                this._log("Calling OpenAI GPT-4o...");
-                const prompt = `You are an expert at analyzing images. Your task is to find all distinct multiple-choice questions in the provided image. Your entire response MUST be a single, valid JSON array. Each object in the array must have a "number" (integer) and a "text" (string) key. If you cannot find any questions, you MUST return an empty array []. Do not include any other text, explanations, or markdown formatting. Example: [{"number": 21, "text": "What is...?"}, {"number": 22, "text": "Which of..."}]`;
+                this._log("Attempting structured JSON extraction...");
+                this._speak("Extracting questions");
+
+                const jsonPrompt = `You are an expert at analyzing images. Your task is to find all distinct multiple-choice questions in the provided image. Your entire response MUST be a single JSON object with one key, "questions", which contains an array of objects. Each object must have a "number" (integer) and a "text" (string) key. Use the "Question X" box for the number. Combine the question and all its options (a, b, c, etc.) into the text field. Ignore all other metadata. If you cannot find any questions, you MUST return an object with an empty array: {"questions": []}. Do not include any other text or explanations.`;
+                let response = await this._api.openai._call(imageData, apiKey, jsonPrompt, true);
                 
+                let rawContent = response.data?.choices?.[0]?.message?.content;
+                let finishDetails = response.data?.choices?.[0]?.finish_details || { type: 'unknown' };
+                
+                this._log(`Received raw content from OpenAI (JSON attempt): ${rawContent}`, 'info');
+                this._log(`Finish reason: ${finishDetails.type}`, 'info');
+
+                if (rawContent) {
+                    const jsonMatch = rawContent.match(/{[\s\S]*}/);
+                    if (jsonMatch) {
+                        try {
+                            const parsedContent = JSON.parse(jsonMatch[0]);
+                            if (parsedContent?.questions && Array.isArray(parsedContent.questions) && parsedContent.questions.length > 0) {
+                                return parsedContent.questions; // Success
+                            }
+                        } catch (e) {
+                            this._log('JSON parsing failed, initiating fallback.', 'warning');
+                        }
+                    }
+                }
+                
+                // --- FALLBACK LOGIC ---
+                this._log('JSON mode failed. Initiating plain text fallback.', 'warning');
+                this._speak("Extraction failed, trying a different method.");
+
+                const textPrompt = `List all multiple-choice questions from the image in plain text. Format each one strictly as: "Question [number]: [full question text including all a, b, c, d options]".`;
+                response = await this._api.openai._call(imageData, apiKey, textPrompt, false);
+                rawContent = response.data?.choices?.[0]?.message?.content;
+
+                if (!rawContent) {
+                    throw new Error("Text fallback failed: AI response content is null or empty.");
+                }
+
+                this._log(`Received raw content from OpenAI (Text fallback): ${rawContent}`, 'info');
+                return this._api.openai._parseTextToQuestions(rawContent);
+            },
+            
+            _call: async (imageData, apiKey, prompt, useJsonFormat) => {
+                const body = {
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageData, detail: 'high' } }] }],
+                };
+                if (useJsonFormat) {
+                    body.response_format = { type: "json_object" };
+                }
+
                 const response = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                    body: JSON.stringify({
-                        model: 'gpt-4o',
-                        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageData, detail: 'high' } }] }],
-                        response_format: { type: "json_object" }
-                    })
+                    body: JSON.stringify(body)
                 });
                 
                 if (!response.ok) {
@@ -553,45 +569,21 @@ class VisionAudioSolver {
                     const message = errorBody.error?.message || JSON.stringify(errorBody);
                     throw new Error(`OpenAI API Error: ${response.status} - ${message}`);
                 }
+                return { data: await response.json() };
+            },
 
-                const data = await response.json();
-                
-                // *** DEFINITIVE FIX: Safely access content and return finish details ***
-                const rawContent = data?.choices?.[0]?.message?.content;
-                const finishDetails = data?.choices?.[0]?.finish_details || { type: 'unknown' };
-                
-                if (!rawContent) {
-                    this._log("AI response content is null or empty.", 'warning');
-                    return { questions: [], finishDetails };
+            _parseTextToQuestions: (text) => {
+                const questions = [];
+                const regex = /Question\s*(\d+):\s*([\s\S]*?)(?=Question\s*\d+:|$)/g;
+                let match;
+                while ((match = regex.exec(text)) !== null) {
+                    questions.push({
+                        number: parseInt(match[1]),
+                        text: match[2].trim()
+                    });
                 }
-
-                this._log(`Received raw content from OpenAI: ${rawContent}`, 'info');
-                const jsonMatch = rawContent.match(/{[\s\S]*}|\[[\s\S]*\]/);
-
-                if (!jsonMatch) {
-                    this._log("Could not find a valid JSON block in the AI response.", 'warning');
-                    return { questions: [], finishDetails };
-                }
-                
-                const jsonString = jsonMatch[0];
-                let parsedContent;
-                try {
-                    parsedContent = JSON.parse(jsonString);
-                } catch(e) {
-                    this._log(`Failed to parse extracted JSON string: ${e.message}`, 'error');
-                    return { questions: [], finishDetails }; // Parsing failed, so it's an empty result for this attempt
-                }
-
-                if (Array.isArray(parsedContent)) {
-                    return { questions: parsedContent, finishDetails };
-                }
-                if (typeof parsedContent === 'object' && parsedContent !== null) {
-                    const arrayValue = Object.values(parsedContent).find(v => Array.isArray(v));
-                    if (arrayValue) return { questions: arrayValue, finishDetails };
-                }
-                
-                // If we reach here, we got valid JSON, but it wasn't in the expected format.
-                return { questions: [], finishDetails };
+                this._log(`Parsed ${questions.length} questions from text fallback.`, 'success');
+                return questions;
             }
         },
         gemini: {
