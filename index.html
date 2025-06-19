@@ -5,1170 +5,340 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Vision AI</title>
+<title>Vision AI - Multi-Solver 2.5</title>
 <style>
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-user-select: none;
-    user-select: none;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+body { font-family: -apple-system, system-ui, sans-serif; background: #000; color: #fff; overflow: hidden; position: fixed; width: 100%; height: 100%; }
+#camera { width: 100%; height: 100%; object-fit: cover; }
 
-body {
-    font-family: -apple-system, system-ui, sans-serif;
-    background: #000;
-    color: #fff;
-    overflow: hidden;
-    position: fixed;
-    width: 100%;
-    height: 100%;
-}
+/* --- Core UI Controls --- */
+.main-controls { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; align-items: center; z-index: 10; }
+.toggle-btn { width: 70px; height: 70px; border-radius: 50%; background: #007AFF; border: 3px solid #fff; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.toggle-btn:active { transform: scale(0.95); }
+.toggle-btn.active { background: #FF3B30; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); } 50% { box-shadow: 0 0 0 15px rgba(255, 59, 48, 0); } }
+.settings-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: none; font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
 
-/* Camera */
-#camera {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    background: #000;
-}
+/* --- Status & Results UI --- */
+.status-display { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); backdrop-filter: blur(10px); padding: 8px 20px; border-radius: 20px; font-size: 14px; font-weight: 600; z-index: 20; transition: opacity 0.3s, transform 0.3s; }
+.status-display.hidden { opacity: 0; transform: translate(-50%, -50px); }
+.status-display.error { background: #FF3B30; }
 
-/* Controls */
-.main-controls {
-    position: fixed;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 20px;
-    align-items: center;
-}
+.results-panel { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(20, 20, 20, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.15); padding: 20px; padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 90px); z-index: 50; transform: translateY(100%); transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); max-height: 50vh; overflow-y: auto; }
+.results-panel.show { transform: translateY(0); }
+.results-header { font-size: 22px; font-weight: 600; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.results-list { display: grid; gap: 20px; }
+.result-item { display: flex; align-items: center; gap: 20px; }
+.result-item-q-number { font-size: 16px; font-weight: 600; color: #fff; background-color: rgba(255,255,255,0.1); width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.result-item-answer { font-size: 28px; font-weight: bold; }
 
-.toggle-btn {
-    width: 70px;
-    height: 70px;
-    border-radius: 50%;
-    background: #007AFF;
-    border: 3px solid #fff;
-    cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
+.results-actions { position: fixed; bottom: 0; left: 0; right: 0; padding: 15px 20px env(safe-area-inset-bottom, 15px) 20px; background: rgba(20, 20, 20, 0.85); display: grid; grid-template-columns: 1fr 1fr; gap: 15px; z-index: 51; }
+.action-btn { padding: 16px; border-radius: 12px; border: none; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.1s, background-color 0.2s; }
+.action-btn:active { transform: scale(0.97); }
+#confirmBtn { background: #007AFF; color: #fff; }
+#rescanBtn { background: rgba(255,255,255,0.15); color: #fff; }
 
-.toggle-btn:active {
-    transform: scale(0.95);
-}
-
-.toggle-btn.active {
-    background: #FF3B30;
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
-    50% { box-shadow: 0 0 0 15px rgba(255, 59, 48, 0); }
-}
-
-.settings-btn {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.settings-btn:active {
-    transform: scale(0.95);
-}
-
-/* Question Counter */
-.question-counter {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.8);
-    backdrop-filter: blur(10px);
-    padding: 8px 20px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: 600;
-    display: none;
-}
-
-.question-counter.show {
-    display: block;
-}
-
-/* Zoom Slider */
-.zoom-control {
-    position: fixed;
-    right: 20px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: rgba(255,255,255,0.1);
-    backdrop-filter: blur(10px);
-    border-radius: 20px;
-    padding: 10px;
-    display: none;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.zoom-control.show {
-    display: block;
-}
-
-.zoom-slider {
-    writing-mode: bt-lr;
-    -webkit-appearance: slider-vertical;
-    width: 40px;
-    height: 200px;
-    background: transparent;
-    outline: none;
-    cursor: pointer;
-}
-
-/* Settings Panel */
-.settings {
-    position: fixed;
-    inset: 0;
-    background: #000;
-    transform: translateX(100%);
-    transition: transform 0.3s ease;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-.settings.open {
-    transform: translateX(0);
-}
-
-.settings-content {
-    padding: 20px;
-    padding-top: env(safe-area-inset-top, 20px);
-    padding-bottom: env(safe-area-inset-bottom, 20px);
-}
-
-.settings-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-}
-
-.settings h2 {
-    font-size: 28px;
-    font-weight: 600;
-}
-
-.close-btn {
-    background: rgba(255,255,255,0.1);
-    border: none;
-    color: #fff;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 8px;
-    width: 44px;
-    height: 44px;
-    border-radius: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.close-btn:active {
-    transform: scale(0.95);
-}
-
-.section {
-    margin-bottom: 35px;
-}
-
-.section-title {
-    font-size: 13px;
-    opacity: 0.5;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 15px;
-}
-
-.input-group {
-    margin-bottom: 15px;
-}
-
-.input-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 14px;
-    opacity: 0.8;
-}
-
-.input-group input,
-.input-group select {
-    width: 100%;
-    padding: 14px 16px;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 12px;
-    color: #fff;
-    font-size: 16px;
-    font-family: inherit;
-    transition: all 0.2s;
-}
-
-.input-group input:focus,
-.input-group select:focus {
-    outline: none;
-    border-color: #007AFF;
-    background: rgba(255,255,255,0.12);
-}
-
-.input-group select {
-    cursor: pointer;
-}
-
-.input-group select option {
-    background: #000;
-    color: #fff;
-}
-
-.switch-group {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-}
-
-.switch {
-    position: relative;
-    width: 51px;
-    height: 31px;
-}
-
-.switch input {
-    display: none;
-}
-
-.switch-slider {
-    position: absolute;
-    inset: 0;
-    background: rgba(255,255,255,0.3);
-    border-radius: 31px;
-    cursor: pointer;
-    transition: background 0.3s;
-}
-
-.switch-slider:before {
-    content: "";
-    position: absolute;
-    width: 27px;
-    height: 27px;
-    left: 2px;
-    top: 2px;
-    background: #fff;
-    border-radius: 50%;
-    transition: transform 0.3s;
-}
-
-input:checked + .switch-slider {
-    background: #34C759;
-}
-
-input:checked + .switch-slider:before {
-    transform: translateX(20px);
-}
-
-.number-input {
-    width: 70px !important;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 8px;
-    padding: 8px;
-    color: #fff;
-    text-align: center;
-}
-
-.save-btn {
-    width: 100%;
-    padding: 16px;
-    background: #007AFF;
-    border: none;
-    border-radius: 12px;
-    color: #fff;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    margin-top: 20px;
-    transition: all 0.2s;
-}
-
-.save-btn:active {
-    transform: scale(0.98);
-}
-
-/* Logs */
-.logs {
-    margin-top: 40px;
-    padding-top: 30px;
-    border-top: 1px solid rgba(255,255,255,0.1);
-}
-
-.logs-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-}
-
-.logs h3 {
-    font-size: 20px;
-    font-weight: 600;
-}
-
-.clear-logs-btn {
-    background: rgba(255,59,48,0.2);
-    border: none;
-    border-radius: 8px;
-    color: #FF453A;
-    padding: 8px 16px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-}
-
-.clear-logs-btn:active {
-    transform: scale(0.95);
-}
-
-.log-container {
-    background: #0A0A0A;
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 12px;
-    padding: 16px;
-    font-family: 'SF Mono', 'Monaco', monospace;
-    font-size: 12px;
-    line-height: 1.6;
-    max-height: 400px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-.log-entry {
-    margin-bottom: 6px;
-    word-break: break-all;
-}
-
-.log-time {
-    opacity: 0.4;
-    font-size: 11px;
-}
-
-.log-entry.error {
-    color: #FF453A;
-}
-
-.log-entry.success {
-    color: #32D74B;
-}
-
-.log-entry.info {
-    color: #64D2FF;
-}
-
-.log-entry.warning {
-    color: #FFD60A;
-}
-
-/* Status indicator */
-.status-indicator {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #32D74B;
-    display: none;
-}
-
-.status-indicator.show {
-    display: block;
-}
-
-.status-indicator.error {
-    background: #FF453A;
-}
-
-.status-indicator.processing {
-    background: #FFD60A;
-    animation: blink 1s infinite;
-}
-
-@keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-}
+/* --- Settings Panel (Minimal) --- */
+.settings { position: fixed; inset: 0; background: #1C1C1E; transform: translateX(100%); transition: transform 0.3s ease; overflow-y: auto; z-index: 1000; padding: 20px; padding-top: env(safe-area-inset-top, 20px); }
+.settings.open { transform: translateX(0); }
+.settings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+.settings h2 { font-size: 28px; }
+.close-btn { background: none; border: none; color: #888; font-size: 28px; cursor: pointer; }
+.input-group { background: #2C2C2E; padding: 12px 16px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+label { font-size: 16px; }
+input[type="password"] { background: none; border: none; color: #fff; font-size: 16px; text-align: right; width: 60%; outline: none; }
 </style>
 </head>
 <body>
+
 <video id="camera" playsinline autoplay muted></video>
 
-<div class="question-counter" id="questionCounter">Question #<span id="questionNumber">0</span></div>
-<div class="status-indicator" id="statusIndicator"></div>
-
-<div class="zoom-control" id="zoomControl">
-    <input type="range" class="zoom-slider" id="zoomSlider" min="1" max="5" step="0.1" value="1" orient="vertical">
-</div>
+<div class="status-display hidden" id="statusDisplay">Initializing...</div>
 
 <div class="main-controls">
     <button class="toggle-btn" id="toggleBtn"></button>
     <button class="settings-btn" id="settingsBtn">⚙️</button>
 </div>
 
-<div class="settings" id="settings">
-    <div class="settings-content">
-        <div class="settings-header">
-            <h2>Settings</h2>
-            <button class="close-btn" id="closeBtn">×</button>
-        </div>
-        
-        <div class="section">
-            <h3 class="section-title">API Configuration</h3>
-            <div class="input-group">
-                <label>OpenAI API Key</label>
-                <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" autocorrect="off" autocapitalize="off">
-            </div>
-            
-            <div class="input-group">
-                <label>Google AI API Key</label>
-                <input type="password" id="geminiKey" placeholder="AIza..." autocomplete="off" autocorrect="off" autocapitalize="off">
-            </div>
-        </div>
-        
-        <div class="section">
-            <h3 class="section-title">Camera Settings</h3>
-            <div class="input-group">
-                <label>Camera Selection</label>
-                <select id="cameraSelect">
-                    <option value="">Loading cameras...</option>
-                </select>
-            </div>
-            
-            <div class="switch-group">
-                <span>Reset Question Counter</span>
-                <button id="resetCounterBtn" style="background: rgba(255,255,255,0.1); border: none; border-radius: 8px; color: #fff; padding: 8px 16px; font-size: 13px; cursor: pointer;">Reset</button>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h3 class="section-title">Scanning Settings</h3>
-            <div class="switch-group">
-                <span>Scan Interval (seconds)</span>
-                <input type="number" id="scanInterval" class="number-input" min="3" max="30" value="5">
-            </div>
-            
-            <div class="switch-group">
-                <span>Repeat Count</span>
-                <input type="number" id="repeatCount" class="number-input" min="1" max="5" value="3">
-            </div>
-            
-            <div class="switch-group">
-                <span>Speech Rate</span>
-                <input type="number" id="speechRate" class="number-input" min="0.5" max="2" step="0.1" value="0.9">
-            </div>
-        </div>
-        
-        <button class="save-btn" id="saveBtn">Save Settings</button>
-        
-        <div class="logs">
-            <div class="logs-header">
-                <h3>Debug Logs</h3>
-                <button class="clear-logs-btn" id="clearLogsBtn">Clear All</button>
-            </div>
-            <div class="log-container" id="logContainer"></div>
-        </div>
-    </div>
+<div class="results-panel" id="resultsPanel">
+    <h3 class="results-header" id="resultsHeader"></h3>
+    <div class="results-list" id="resultsList"></div>
+</div>
+<div class="results-actions" id="resultsActions" style="transform: translateY(200%)">
+    <button class="action-btn" id="rescanBtn">Re-Scan</button>
+    <button class="action-btn" id="confirmBtn">Confirm</button>
+</div>
+
+<div class="settings" id="settingsPanel">
+    <div class="settings-header"><h2>Settings</h2><button class="close-btn" id="closeBtn">×</button></div>
+    <div class="input-group"><label>OpenAI API Key</label><input type="password" id="openaiKey"></div>
+    <div class="input-group"><label>Google AI API Key</label><input type="password" id="geminiKey"></div>
 </div>
 
 <script>
-// Global State
-const state = {
-    stream: null,
-    videoTrack: null,
-    cameras: [],
-    currentCameraId: null,
-    isScanning: false,
-    scanTimer: null,
-    questionCounter: 0,
-    lastProcessedImage: null,
-    settings: {
-        openai: localStorage.getItem('visionai_openai') || '',
-        gemini: localStorage.getItem('visionai_gemini') || '',
-        cameraId: localStorage.getItem('visionai_camera') || '',
-        scanInterval: parseInt(localStorage.getItem('visionai_interval') || '5'),
-        repeatCount: parseInt(localStorage.getItem('visionai_repeat') || '3'),
-        speechRate: parseFloat(localStorage.getItem('visionai_rate') || '0.9'),
-        questionCounter: parseInt(localStorage.getItem('visionai_counter') || '0')
+class VisionMultiSolver {
+    constructor() {
+        this.state = 'IDLE'; // IDLE, EXTRACTING, SOLVING_BATCH, AWAITING_CONFIRMATION, ERROR
+        this.dom = this._getDomElements();
+        this.settings = this._loadSettings();
+        this.currentBatchResult = null;
     }
-};
 
-// DOM Elements
-const els = {
-    camera: document.getElementById('camera'),
-    toggleBtn: document.getElementById('toggleBtn'),
-    settingsBtn: document.getElementById('settingsBtn'),
-    settings: document.getElementById('settings'),
-    closeBtn: document.getElementById('closeBtn'),
-    saveBtn: document.getElementById('saveBtn'),
-    clearLogsBtn: document.getElementById('clearLogsBtn'),
-    resetCounterBtn: document.getElementById('resetCounterBtn'),
-    logContainer: document.getElementById('logContainer'),
-    zoomControl: document.getElementById('zoomControl'),
-    zoomSlider: document.getElementById('zoomSlider'),
-    cameraSelect: document.getElementById('cameraSelect'),
-    openaiKey: document.getElementById('openaiKey'),
-    geminiKey: document.getElementById('geminiKey'),
-    scanInterval: document.getElementById('scanInterval'),
-    repeatCount: document.getElementById('repeatCount'),
-    speechRate: document.getElementById('speechRate'),
-    questionCounter: document.getElementById('questionCounter'),
-    questionNumber: document.getElementById('questionNumber'),
-    statusIndicator: document.getElementById('statusIndicator')
-};
+    // --- 1. INITIALIZATION & SETUP ---
 
-// Initialize question counter
-state.questionCounter = state.settings.questionCounter;
-els.questionNumber.textContent = state.questionCounter;
-
-// Logging System
-function log(message, type = 'info') {
-    const timestamp = new Date().toLocaleTimeString('en-US', { 
-        hour12: false, 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        second: '2-digit', 
-        fractionalSecondDigits: 3 
-    });
-    
-    const entry = document.createElement('div');
-    entry.className = `log-entry ${type}`;
-    entry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${message}`;
-    els.logContainer.appendChild(entry);
-    els.logContainer.scrollTop = els.logContainer.scrollHeight;
-    
-    console.log(`[${timestamp}] [${type.toUpperCase()}] ${message}`);
-}
-
-// Status Indicator
-function setStatus(type) {
-    els.statusIndicator.className = `status-indicator show ${type}`;
-    if (type === 'off') {
-        els.statusIndicator.classList.remove('show');
-    }
-}
-
-// Camera Functions
-async function enumerateCameras() {
-    log('Enumerating available cameras...');
-    try {
-        // First get permission
-        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        tempStream.getTracks().forEach(track => track.stop());
-        
-        // Now enumerate devices
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        state.cameras = devices.filter(d => d.kind === 'videoinput');
-        
-        log(`Found ${state.cameras.length} camera(s)`, 'success');
-        
-        els.cameraSelect.innerHTML = state.cameras.map((cam, index) => {
-            const label = cam.label || `Camera ${index + 1}`;
-            log(`  Camera ${index + 1}: ${label} (ID: ${cam.deviceId.substring(0, 8)}...)`);
-            return `<option value="${cam.deviceId}">${label}</option>`;
-        }).join('');
-        
-        // Select saved camera or first available
-        if (state.settings.cameraId && state.cameras.find(c => c.deviceId === state.settings.cameraId)) {
-            els.cameraSelect.value = state.settings.cameraId;
-        } else if (state.cameras.length > 0) {
-            els.cameraSelect.value = state.cameras[0].deviceId;
-        }
-        
-    } catch (err) {
-        log(`Camera enumeration failed: ${err.name} - ${err.message}`, 'error');
-        setStatus('error');
-    }
-}
-
-async function startCamera(deviceId = null) {
-    log(`Attempting to start camera (deviceId: ${deviceId ? deviceId.substring(0, 8) + '...' : 'default'})`);
-    setStatus('processing');
-    
-    try {
-        // Stop existing stream
-        if (state.stream) {
-            log('Stopping existing camera stream');
-            state.stream.getTracks().forEach(track => {
-                track.stop();
-                log(`  Stopped ${track.kind} track: ${track.label}`);
-            });
-            state.stream = null;
-            state.videoTrack = null;
-        }
-        
-        // Try different constraint sets
-        const constraintSets = [
-            // Try specific device with ideal resolution
-            {
-                video: {
-                    deviceId: deviceId ? { exact: deviceId } : undefined,
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                },
-                audio: false
-            },
-            // Fallback: specific device without resolution constraints
-            {
-                video: {
-                    deviceId: deviceId ? { exact: deviceId } : undefined
-                },
-                audio: false
-            },
-            // Fallback: any camera with facingMode
-            {
-                video: {
-                    facingMode: 'environment'
-                },
-                audio: false
-            },
-            // Last resort: any camera
-            {
-                video: true,
-                audio: false
-            }
-        ];
-        
-        let stream = null;
-        let successfulConstraints = null;
-        
-        for (let i = 0; i < constraintSets.length; i++) {
-            try {
-                log(`Trying constraint set ${i + 1}/${constraintSets.length}...`);
-                stream = await navigator.mediaDevices.getUserMedia(constraintSets[i]);
-                successfulConstraints = constraintSets[i];
-                log(`Success with constraint set ${i + 1}`, 'success');
-                break;
-            } catch (err) {
-                log(`Constraint set ${i + 1} failed: ${err.name}`, 'warning');
-                if (i === constraintSets.length - 1) {
-                    throw err; // Throw on last attempt
-                }
-            }
-        }
-        
-        if (!stream) {
-            throw new Error('Failed to start camera with any constraints');
-        }
-        
-        state.stream = stream;
-        state.videoTrack = stream.getVideoTracks()[0];
-        state.currentCameraId = deviceId;
-        
-        const settings = state.videoTrack.getSettings();
-        log(`Camera started successfully:`, 'success');
-        log(`  Resolution: ${settings.width}x${settings.height}`);
-        log(`  Frame rate: ${settings.frameRate}fps`);
-        log(`  Device: ${state.videoTrack.label}`);
-        
-        // Set video source
-        els.camera.srcObject = stream;
-        
-        // Wait for video to be ready
-        await new Promise((resolve, reject) => {
-            els.camera.onloadedmetadata = () => {
-                els.camera.play()
-                    .then(() => {
-                        log('Video playback started', 'success');
-                        resolve();
-                    })
-                    .catch(reject);
-            };
-            els.camera.onerror = () => reject(new Error('Video element error'));
-            setTimeout(() => reject(new Error('Video load timeout')), 5000);
-        });
-        
-        // Setup zoom if available
-        setupZoom();
-        setStatus('');
-        
-    } catch (err) {
-        log(`Camera start failed: ${err.name} - ${err.message}`, 'error');
-        setStatus('error');
-        
-        // Provide helpful error messages
-        if (err.name === 'NotAllowedError') {
-            log('Camera permission was denied. Please allow camera access and reload.', 'error');
-        } else if (err.name === 'NotFoundError') {
-            log('No camera found. Please connect a camera and reload.', 'error');
-        } else if (err.name === 'NotReadableError') {
-            log('Camera is in use by another application. Please close other apps using the camera.', 'error');
-        } else if (err.name === 'OverconstrainedError') {
-            log('Camera does not support the requested settings.', 'error');
-        }
-    }
-}
-
-function setupZoom() {
-    if (!state.videoTrack) {
-        log('No video track available for zoom setup');
-        return;
-    }
-    
-    try {
-        const capabilities = state.videoTrack.getCapabilities();
-        
-        if (capabilities.zoom) {
-            log(`Zoom capabilities detected: ${capabilities.zoom.min} - ${capabilities.zoom.max}`);
-            
-            els.zoomControl.classList.add('show');
-            els.zoomSlider.min = capabilities.zoom.min || 1;
-            els.zoomSlider.max = capabilities.zoom.max || 1;
-            els.zoomSlider.value = state.videoTrack.getSettings().zoom || 1;
-            
-            els.zoomSlider.oninput = async (e) => {
-                const zoom = parseFloat(e.target.value);
-                try {
-                    await state.videoTrack.applyConstraints({ 
-                        advanced: [{ zoom }] 
-                    });
-                    log(`Zoom adjusted to: ${zoom.toFixed(1)}x`);
-                } catch (err) {
-                    log(`Zoom adjustment failed: ${err.message}`, 'error');
-                }
-            };
-        } else {
-            els.zoomControl.classList.remove('show');
-            log('Camera does not support zoom');
-        }
-    } catch (err) {
-        log(`Zoom setup error: ${err.message}`, 'error');
-    }
-}
-
-// Image Capture
-function captureImage() {
-    log('Capturing image from video stream...');
-    
-    try {
-        if (!els.camera.videoWidth || !els.camera.videoHeight) {
-            throw new Error('Video dimensions not available');
-        }
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = els.camera.videoWidth;
-        canvas.height = els.camera.videoHeight;
-        
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(els.camera, 0, 0);
-        
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        const sizeKB = Math.round((dataUrl.length * 0.75) / 1024); // Approximate size
-        
-        log(`Image captured: ${canvas.width}x${canvas.height}, ~${sizeKB}KB`, 'success');
-        state.lastProcessedImage = dataUrl;
-        
-        return dataUrl;
-        
-    } catch (err) {
-        log(`Image capture failed: ${err.message}`, 'error');
-        throw err;
-    }
-}
-
-// Voice Output
-function speak(text, onComplete) {
-    if (!('speechSynthesis' in window)) {
-        log('Speech synthesis not supported', 'error');
-        if (onComplete) onComplete();
-        return;
-    }
-    
-    log(`Initiating speech: "${text}"`);
-    
-    // Cancel any ongoing speech
-    speechSynthesis.cancel();
-    
-    // Wait a bit for cancel to complete
-    setTimeout(() => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = state.settings.speechRate;
-        utterance.pitch = 1;
-        utterance.volume = 1;
-        
-        utterance.onstart = () => {
-            log('Speech started');
+    _getDomElements() {
+        return {
+            camera: document.getElementById('camera'),
+            toggleBtn: document.getElementById('toggleBtn'),
+            settingsBtn: document.getElementById('settingsBtn'),
+            statusDisplay: document.getElementById('statusDisplay'),
+            resultsPanel: document.getElementById('resultsPanel'),
+            resultsHeader: document.getElementById('resultsHeader'),
+            resultsList: document.getElementById('resultsList'),
+            resultsActions: document.getElementById('resultsActions'),
+            rescanBtn: document.getElementById('rescanBtn'),
+            confirmBtn: document.getElementById('confirmBtn'),
+            settingsPanel: document.getElementById('settingsPanel'),
+            closeBtn: document.getElementById('closeBtn'),
+            openaiKey: document.getElementById('openaiKey'),
+            geminiKey: document.getElementById('geminiKey'),
         };
-        
-        utterance.onend = () => {
-            log('Speech completed');
-            if (onComplete) onComplete();
+    }
+
+    _loadSettings() {
+        return {
+            openai: localStorage.getItem('vision_solver_openai') || '',
+            gemini: localStorage.getItem('vision_solver_gemini') || '',
         };
-        
-        utterance.onerror = (e) => {
-            log(`Speech error: ${e.error}`, 'error');
-            if (onComplete) onComplete();
-        };
-        
+    }
+
+    async initialize() {
+        this._setState('INITIALIZING');
+        this._bindEvents();
         try {
-            speechSynthesis.speak(utterance);
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'environment' } });
+            this.dom.camera.srcObject = stream;
+            await this.dom.camera.play();
+            this._setState('IDLE');
         } catch (err) {
-            log(`Speech synthesis error: ${err.message}`, 'error');
-            if (onComplete) onComplete();
+            this._handleError(`Camera Failed: ${err.message}`);
         }
-    }, 100);
-}
-
-// API Functions
-async function extractQuestion(imageData) {
-    log('Calling OpenAI Vision API...');
+    }
     
-    try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${state.settings.openai}`
-            },
-            body: JSON.stringify({
-                model: 'gpt-4o-mini',
-                messages: [{
-                    role: 'user',
-                    content: [
-                        { 
-                            type: 'text', 
-                            text: 'Extract the question from this image. If it\'s multiple choice, list the question number if visible. Be precise.' 
-                        },
-                        { 
-                            type: 'image_url', 
-                            image_url: { 
-                                url: imageData,
-                                detail: 'high'
-                            } 
-                        }
-                    ]
-                }],
-                max_tokens: 500,
-                temperature: 0
-            })
+    _bindEvents() {
+        this.dom.toggleBtn.addEventListener('click', () => this.toggleScan());
+        this.dom.settingsBtn.addEventListener('click', () => this.openSettings());
+        this.dom.closeBtn.addEventListener('click', () => this.closeSettings());
+        this.dom.confirmBtn.addEventListener('click', () => this.confirmAndReset());
+        this.dom.rescanBtn.addEventListener('click', () => this.rescan());
+    }
+
+    // --- 2. STATE & UI MANAGEMENT ---
+
+    _setState(newState, message) {
+        this.state = newState;
+        console.log(`State -> ${newState}`);
+        
+        const { statusDisplay, resultsPanel, resultsActions, toggleBtn } = this.dom;
+        statusDisplay.classList.remove('error', 'hidden');
+        resultsPanel.classList.remove('show');
+        resultsActions.style.transform = 'translateY(200%)';
+
+        switch (newState) {
+            case 'IDLE':
+                statusDisplay.classList.add('hidden');
+                toggleBtn.classList.remove('active');
+                break;
+            case 'AWAITING_CONFIRMATION':
+                statusDisplay.classList.add('hidden');
+                toggleBtn.classList.remove('active');
+                this._presentBatchResults();
+                break;
+            case 'ERROR':
+                statusDisplay.textContent = message;
+                statusDisplay.classList.add('error');
+                toggleBtn.classList.remove('active');
+                break;
+            default: // Processing states
+                statusDisplay.textContent = message || `${newState.charAt(0)}${newState.slice(1).toLowerCase().replace('_', ' ')}...`;
+                toggleBtn.classList.add('active');
+        }
+    }
+
+    _presentBatchResults() {
+        if (!this.currentBatchResult || this.currentBatchResult.length === 0) return;
+        
+        const { resultsHeader, resultsList, resultsPanel, resultsActions } = this.dom;
+        
+        resultsHeader.textContent = `Found ${this.currentBatchResult.length} Question${this.currentBatchResult.length > 1 ? 's' : ''}`;
+        resultsList.innerHTML = ''; // Clear previous results
+
+        let speechText = '';
+        this.currentBatchResult.forEach(item => {
+            const itemEl = document.createElement('div');
+            itemEl.className = 'result-item';
+            itemEl.innerHTML = `
+                <div class="result-item-q-number">${item.number}</div>
+                <div class="result-item-answer">${item.answer.split(',').join(', ')}</div>
+            `;
+            resultsList.appendChild(itemEl);
+            speechText += `Answer for question ${item.number}: ${item.answer.split(',').join(', ')}. `;
         });
-        
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.error?.message || `HTTP ${response.status}`);
-        }
-        
-        const data = await response.json();
-        const question = data.choices[0].message.content.trim();
-        
-        log(`Question extracted (${question.length} chars)`, 'success');
-        log(`Question preview: "${question.substring(0, 100)}..."`);
-        
-        return question;
-        
-    } catch (err) {
-        log(`OpenAI API error: ${err.message}`, 'error');
-        throw err;
-    }
-}
 
-async function solveQuestion(question) {
-    log('Calling Gemini API to solve...');
-    
-    try {
-        const prompt = `You are solving a multiple choice question. 
-Return ONLY the letter(s) of the correct answer(s).
-If single answer: return just "A" or "B" or "C" etc.
-If multiple answers: return like "A,C,E" (comma separated, no spaces)
-No explanation, just the letter(s).
-
-Question: ${question}`;
-        
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-thinking-exp:generateContent?key=${state.settings.gemini}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: prompt
-                    }]
-                }],
-                generationConfig: {
-                    temperature: 0.1,
-                    maxOutputTokens: 20,
-                    topK: 1,
-                    topP: 0.1
-                }
-            })
-        });
-        
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.error?.message || `HTTP ${response.status}`);
-        }
-        
-        const data = await response.json();
-        let answer = data.candidates[0].content.parts[0].text.trim().toUpperCase();
-        
-        // Clean up answer - remove any non-letter characters except commas
-        answer = answer.replace(/[^A-Z,]/g, '');
-        
-        log(`Answer received: "${answer}"`, 'success');
-        return answer;
-        
-    } catch (err) {
-        log(`Gemini API error: ${err.message}`, 'error');
-        throw err;
-    }
-}
-
-// Main Scan Process
-async function performScan() {
-    log(`Starting scan cycle for Question #${state.questionCounter + 1}...`);
-    setStatus('processing');
-    
-    if (!state.settings.openai || !state.settings.gemini) {
-        log('Missing API keys', 'error');
-        speak('Please configure API keys in settings');
-        setStatus('error');
-        return;
+        resultsPanel.classList.add('show');
+        resultsActions.style.transform = 'translateY(0)';
+        this._speak(speechText);
     }
     
-    try {
-        // Increment question counter
-        state.questionCounter++;
-        els.questionNumber.textContent = state.questionCounter;
-        els.questionCounter.classList.add('show');
-        localStorage.setItem('visionai_counter', state.questionCounter);
-        
-        // Capture image
-        const imageData = captureImage();
-        
-        // Extract question
-        const question = await extractQuestion(imageData);
-        
-        if (!question || question.length < 10) {
-            log('No valid question detected', 'warning');
-            speak('No question found. Processing next question.');
-            state.questionCounter--; // Revert counter
-            els.questionNumber.textContent = state.questionCounter;
-            localStorage.setItem('visionai_counter', state.questionCounter);
-            setStatus('');
-            return;
+    // --- 3. CORE SCANNING WORKFLOW ---
+
+    toggleScan() {
+        if (this.state === 'IDLE' || this.state === 'ERROR') {
+            this.startScan();
+        } else {
+            this._setState('IDLE');
         }
-        
-        // Solve question
-        const answer = await solveQuestion(question);
-        
-        // Format answer for speech
-        const answerForSpeech = answer.split(',').join(', ').toLowerCase();
-        const fullMessage = `Answer to Question ${state.questionCounter}: ${answerForSpeech}`;
-        
-        log(`Speaking answer ${state.settings.repeatCount} times...`);
-        setStatus('');
-        
-        // Speak with repeats
-        let repeatIndex = 0;
-        
-        function speakNext() {
-            if (repeatIndex < state.settings.repeatCount) {
-                const prefix = repeatIndex > 0 ? 'Again: ' : '';
-                speak(prefix + fullMessage, () => {
-                    repeatIndex++;
-                    if (repeatIndex < state.settings.repeatCount) {
-                        setTimeout(speakNext, 500);
-                    } else {
-                        // After all repeats, announce next
-                        setTimeout(() => {
-                            speak('Processing next question', () => {
-                                log('Scan cycle completed', 'success');
-                            });
-                        }, 1000);
-                    }
+    }
+
+    async startScan() {
+        if (!this.settings.openai || !this.settings.gemini) {
+            return this._handleError("API Keys not set in settings.");
+        }
+
+        try {
+            // PHASE 1: Capture & Extract
+            this._setState('EXTRACTING', 'Capturing & Extracting Questions');
+            const imageData = this._captureImage();
+            const extractedQuestions = await this._api.openai.extract(imageData, this.settings.openai);
+            
+            if (extractedQuestions.length === 0) {
+                throw new Error("No questions found in the image.");
+            }
+
+            // PHASE 2: Solve Batch
+            this._setState('SOLVING_BATCH', `Solving ${extractedQuestions.length} Question${extractedQuestions.length > 1 ? 's' : ''}`);
+            const solvedAnswers = await this._api.gemini.solveBatch(extractedQuestions, this.settings.gemini);
+
+            // Combine results
+            this.currentBatchResult = extractedQuestions.map(q => ({
+                number: q.number,
+                answer: solvedAnswers[q.number] || 'N/A' // Fallback if a number isn't in the response
+            }));
+            
+            this._setState('AWAITING_CONFIRMATION');
+
+        } catch (err) {
+            this._handleError(err.message);
+        }
+    }
+    
+    confirmAndReset() {
+        this._setState('IDLE');
+    }
+    
+    rescan() {
+        this._setState('IDLE');
+        // A brief delay to allow the panel to hide before starting again
+        setTimeout(() => this.startScan(), 100);
+    }
+
+    _handleError(errorMessage) {
+        console.error("Workflow Error:", errorMessage);
+        this._setState('ERROR', errorMessage);
+        this._speak(`Error: ${errorMessage.substring(0, 100)}`);
+    }
+
+    // --- 4. HELPERS (CAPTURE, SPEECH, API) ---
+
+    _captureImage() {
+        const canvas = document.createElement('canvas');
+        canvas.width = this.dom.camera.videoWidth;
+        canvas.height = this.dom.camera.videoHeight;
+        canvas.getContext('2d').drawImage(this.dom.camera, 0, 0);
+        return canvas.toDataURL('image/jpeg', 0.9);
+    }
+
+    _speak(text) {
+        if (!('speechSynthesis' in window)) return;
+        speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        speechSynthesis.speak(utterance);
+    }
+
+    _api = {
+        openai: {
+            extract: async (imageData, apiKey) => {
+                const prompt = `Analyze the image to find all distinct multiple-choice questions. Return a JSON array where each object has "number" (int) and "text" (string) keys. 
+                Example: [{"number": 21, "text": "What is...?"}, {"number": 22, "text": "Which of..."}].
+                If a question number isn't visible, use a logical placeholder. Respond ONLY with the JSON array.`;
+
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                    body: JSON.stringify({
+                        model: 'gpt-4o',
+                        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageData, detail: 'high' } }] }],
+                        response_format: { type: "json_object" }
+                    })
                 });
+                if (!response.ok) throw new Error(`OpenAI Error: ${response.statusText}`);
+                const data = await response.json();
+                // The JSON will be inside a key, e.g. {"questions": [...]}, so we find the first array.
+                const resultObject = JSON.parse(data.choices[0].message.content);
+                const result = Object.values(resultObject).find(v => Array.isArray(v));
+                if(!result) throw new Error("AI did not return a valid question array.");
+                return result;
+            }
+        },
+        gemini: {
+            solveBatch: async (questions, apiKey) => {
+                const formattedQuestions = questions.map(q => `Question #${q.number}:\n${q.text}`).join('\n\n---\n\n');
+                const prompt = `You are an expert test-taker. Below are several multiple-choice questions. Solve each one.
+                    Return a single JSON object where keys are the question numbers (as strings) and values are the correct letter choices (as strings, e.g., "A" or "B,D").
+                    Example response: {"21": "A", "22": "C,D"}. Do not include any other text or explanation.
+
+                    Questions:
+                    ${formattedQuestions}`;
+                
+                // *** MODEL UPGRADED TO GEMINI 2.5 PRO AS REQUESTED ***
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
+                    })
+                });
+                if (!response.ok) throw new Error(`Gemini 2.5 Pro Error: ${response.statusText}`);
+                const data = await response.json();
+                return JSON.parse(data.candidates[0].content.parts[0].text);
             }
         }
-        
-        speakNext();
-        
-    } catch (err) {
-        log(`Scan error: ${err.message}`, 'error');
-        speak('Error occurred. Trying next question.');
-        setStatus('error');
-        
-        // Revert counter on error
-        state.questionCounter--;
-        els.questionNumber.textContent = state.questionCounter;
-        localStorage.setItem('visionai_counter', state.questionCounter);
-    }
-}
-
-// Toggle Scanning
-function toggleScanning() {
-    state.isScanning = !state.isScanning;
-    els.toggleBtn.classList.toggle('active', state.isScanning);
-    
-    if (state.isScanning) {
-        log(`Started continuous scanning (interval: ${state.settings.scanInterval}s)`, 'info');
-        els.questionCounter.classList.add('show');
-        
-        // Perform first scan immediately
-        performScan();
-        
-        // Set up interval
-        state.scanTimer = setInterval(performScan, state.settings.scanInterval * 1000);
-    } else {
-        log('Stopped scanning', 'info');
-        
-        if (state.scanTimer) {
-            clearInterval(state.scanTimer);
-            state.scanTimer = null;
-        }
-        
-        // Cancel any ongoing speech
-        speechSynthesis.cancel();
-        setStatus('off');
-    }
-}
-
-// Settings Functions
-function openSettings() {
-    els.settings.classList.add('open');
-    
-    // Populate current values
-    els.openaiKey.value = state.settings.openai;
-    els.geminiKey.value = state.settings.gemini;
-    els.scanInterval.value = state.settings.scanInterval;
-    els.repeatCount.value = state.settings.repeatCount;
-    els.speechRate.value = state.settings.speechRate;
-    
-    log('Settings panel opened');
-}
-
-function saveSettings() {
-    // Get values
-    const newSettings = {
-        openai: els.openaiKey.value.trim(),
-        gemini: els.geminiKey.value.trim(),
-        cameraId: els.cameraSelect.value,
-        scanInterval: parseInt(els.scanInterval.value),
-        repeatCount: parseInt(els.repeatCount.value),
-        speechRate: parseFloat(els.speechRate.value)
     };
     
-    // Validate
-    if (newSettings.scanInterval < 3) newSettings.scanInterval = 3;
-    if (newSettings.scanInterval > 30) newSettings.scanInterval = 30;
-    if (newSettings.repeatCount < 1) newSettings.repeatCount = 1;
-    if (newSettings.repeatCount > 5) newSettings.repeatCount = 5;
-    if (newSettings.speechRate < 0.5) newSettings.speechRate = 0.5;
-    if (newSettings.speechRate > 2) newSettings.speechRate = 2;
-    
-    // Save
-    Object.assign(state.settings, newSettings);
-    
-    localStorage.setItem('visionai_openai', state.settings.openai);
-    localStorage.setItem('visionai_gemini', state.settings.gemini);
-    localStorage.setItem('visionai_camera', state.settings.cameraId);
-    localStorage.setItem('visionai_interval', state.settings.scanInterval);
-    localStorage.setItem('visionai_repeat', state.settings.repeatCount);
-    localStorage.setItem('visionai_rate', state.settings.speechRate);
-    
-    log('Settings saved successfully', 'success');
-    
-    // Restart camera if changed
-    if (state.currentCameraId !== state.settings.cameraId) {
-        log('Camera changed, restarting...');
-        startCamera(state.settings.cameraId);
+    // --- 5. SETTINGS PANEL LOGIC ---
+    openSettings() {
+        this.dom.openaiKey.value = this.settings.openai;
+        this.dom.geminiKey.value = this.settings.gemini;
+        this.dom.settingsPanel.classList.add('open');
     }
-    
-    // Update scan interval if scanning
-    if (state.isScanning && state.scanTimer) {
-        clearInterval(state.scanTimer);
-        state.scanTimer = setInterval(performScan, state.settings.scanInterval * 1000);
-        log(`Updated scan interval to ${state.settings.scanInterval}s`);
+
+    closeSettings() {
+        // Save on close
+        this.settings.openai = this.dom.openaiKey.value.trim();
+        this.settings.gemini = this.dom.geminiKey.value.trim();
+        localStorage.setItem('vision_solver_openai', this.settings.openai);
+        localStorage.setItem('vision_solver_gemini', this.settings.gemini);
+        this.dom.settingsPanel.classList.remove('open');
+        console.log("Settings saved.");
     }
-    
-    els.settings.classList.remove('open');
 }
 
-function resetCounter() {
-    state.questionCounter = 0;
-    state.settings.questionCounter = 0;
-    els.questionNumber.textContent = 0;
-    localStorage.setItem('visionai_counter', '0');
-    log('Question counter reset to 0', 'info');
-}
-
-// Event Listeners
-els.toggleBtn.addEventListener('click', toggleScanning);
-els.settingsBtn.addEventListener('click', openSettings);
-els.closeBtn.addEventListener('click', () => els.settings.classList.remove('open'));
-els.saveBtn.addEventListener('click', saveSettings);
-els.clearLogsBtn.addEventListener('click', () => {
-    els.logContainer.innerHTML = '';
-    log('Logs cleared', 'info');
-});
-els.resetCounterBtn.addEventListener('click', resetCounter);
-
-// Prevent unwanted gestures
-document.addEventListener('gesturestart', e => e.preventDefault());
-document.addEventListener('gesturechange', e => e.preventDefault());
-
-// Initialize App
-async function init() {
-    log('==== Vision AI Starting ====', 'info');
-    log(`App Version: 2.0.0`);
-    log(`User Agent: ${navigator.userAgent}`);
-    
-    // Check API keys
-    log(`API Keys: OpenAI ${state.settings.openai ? '✓' : '✗'}, Gemini ${state.settings.gemini ? '✓' : '✗'}`);
-    
-    // Check permissions
-    try {
-        const permissions = await navigator.permissions.query({ name: 'camera' });
-        log(`Camera permission: ${permissions.state}`);
-    } catch (err) {
-        log('Cannot check camera permission', 'warning');
-    }
-    
-    // Enumerate and start camera
-    await enumerateCameras();
-    
-    if (state.cameras.length > 0) {
-        await startCamera(state.settings.cameraId || state.cameras[0].deviceId);
-    } else {
-        log('No cameras found', 'error');
-        setStatus('error');
-    }
-    
-    log('==== Initialization Complete ====', 'success');
-}
-
-// Start application
-init().catch(err => {
-    log(`Fatal initialization error: ${err.message}`, 'error');
-    setStatus('error');
+// --- App Entry Point ---
+document.addEventListener('DOMContentLoaded', () => {
+    const app = new VisionMultiSolver();
+    app.initialize();
 });
 </script>
 </body>
