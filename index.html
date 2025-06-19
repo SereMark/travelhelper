@@ -532,16 +532,21 @@ class VisionAudioSolver {
                     throw new Error("Failed to parse JSON response from OpenAI.");
                 }
 
-                // *** FIX: Robustly find the array in the response ***
-                if (Array.isArray(parsedContent)) {
-                    return parsedContent; // It's already an array
+                // *** FIX: Robustly find the array in the response to prevent TypeError ***
+                if (typeof parsedContent !== 'object' || parsedContent === null) {
+                    throw new Error("AI response was not a valid JSON object or array.");
                 }
-                if (typeof parsedContent === 'object' && parsedContent !== null) {
-                    const arrayValue = Object.values(parsedContent).find(v => Array.isArray(v));
-                    if (arrayValue) return arrayValue; // Found the array inside an object
+                if (Array.isArray(parsedContent)) {
+                    this._log("OpenAI extraction successful (direct array).", 'success');
+                    return parsedContent;
+                }
+                const arrayValue = Object.values(parsedContent).find(v => Array.isArray(v));
+                if (arrayValue) {
+                    this._log("OpenAI extraction successful (nested array).", 'success');
+                    return arrayValue;
                 }
                 
-                throw new Error("AI did not return a valid question array.");
+                throw new Error("AI did not return a response with a valid question array.");
             }
         },
         gemini: {
