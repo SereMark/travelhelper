@@ -399,31 +399,32 @@ class VisionAudioSolver {
     async _performExtractionWithRetries(imageData) {
         const MAX_ATTEMPTS = 3;
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            this._speak(attempt === 1 ? "Extracting questions" : `Scan failed, trying again...`);
+            this._speak(attempt === 1 ? "Extracting questions" : "Retrying extraction...");
             this._log(`Extraction attempt ${attempt}/${MAX_ATTEMPTS}...`);
             
             const { questions, finishDetails } = await this._api.openai.extract(imageData, this.settings.openai);
 
-            // Check for a successful result first.
             if (questions.length > 0) {
-                return questions;
+                return questions; // Success
             }
 
-            // If no questions, log the reason and decide whether to retry.
-            const reason = finishDetails?.type || 'unknown_reason';
-            this._log(`Attempt ${attempt} resulted in 0 questions. Finish reason: ${reason}`, 'warning');
-
-            if (reason === 'stop' || reason === 'length') {
-                 // If the model stopped cleanly but found nothing, further retries are unlikely to help.
-                 break;
+            const reason = finishDetails?.type || 'unknown';
+            this._log(`Attempt ${attempt} failed. Finish reason: ${reason}`, 'warning');
+            
+            if (reason === 'content_filter') {
+                this._speak("Image flagged by content filter.");
+            }
+            
+            if (reason === 'stop') {
+                this._log('AI stopped cleanly but found no content. Halting retries.', 'warning');
+                break;
             }
 
-            // For content filters or other issues, wait and retry.
             if (attempt < MAX_ATTEMPTS) {
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retrying
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retry
             }
         }
-        return []; // Return an empty array if all attempts fail
+        return []; // Return empty if all attempts fail
     }
 
     _handleError(errorMessage) {
@@ -534,7 +535,7 @@ class VisionAudioSolver {
         openai: {
             extract: async (imageData, apiKey) => {
                 this._log("Calling OpenAI GPT-4o...");
-                const prompt = `You are an expert at analyzing images. Your task is to find all distinct multiple-choice questions in the provided image. Your entire response MUST be a single, valid JSON array. Each object in the array must have a "number" (integer) and a "text" (string) key. Do not include any other text, explanations, or markdown formatting. Example: [{"number": 21, "text": "What is...?"}, {"number": 22, "text": "Which of..."}]`;
+                const prompt = `You are an expert at analyzing images. Your task is to find all distinct multiple-choice questions in the provided image. Your entire response MUST be a single, valid JSON array. Each object in the array must have a "number" (integer) and a "text" (string) key. If you cannot find any questions, you MUST return an empty array []. Do not include any other text, explanations, or markdown formatting. Example: [{"number": 21, "text": "What is...?"}, {"number": 22, "text": "Which of..."}]`;
                 
                 const response = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
@@ -560,6 +561,7 @@ class VisionAudioSolver {
                 const finishDetails = data?.choices?.[0]?.finish_details || { type: 'unknown' };
                 
                 if (!rawContent) {
+                    this._log("AI response content is null or empty.", 'warning');
                     return { questions: [], finishDetails };
                 }
 
@@ -567,6 +569,7 @@ class VisionAudioSolver {
                 const jsonMatch = rawContent.match(/{[\s\S]*}|\[[\s\S]*\]/);
 
                 if (!jsonMatch) {
+                    this._log("Could not find a valid JSON block in the AI response.", 'warning');
                     return { questions: [], finishDetails };
                 }
                 
@@ -576,7 +579,7 @@ class VisionAudioSolver {
                     parsedContent = JSON.parse(jsonString);
                 } catch(e) {
                     this._log(`Failed to parse extracted JSON string: ${e.message}`, 'error');
-                    return { questions: [], finishDetails };
+                    return { questions: [], finishDetails }; // Parsing failed, so it's an empty result for this attempt
                 }
 
                 if (Array.isArray(parsedContent)) {
@@ -587,6 +590,7 @@ class VisionAudioSolver {
                     if (arrayValue) return { questions: arrayValue, finishDetails };
                 }
                 
+                // If we reach here, we got valid JSON, but it wasn't in the expected format.
                 return { questions: [], finishDetails };
             }
         },
