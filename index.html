@@ -95,6 +95,9 @@ body {
     z-index: 10;
     display: none; /* Hidden by default, shown via JS */
 }
+.zoom-control.show {
+    display: block;
+}
 .zoom-slider {
     writing-mode: bt-lr;
     -webkit-appearance: slider-vertical;
@@ -265,7 +268,7 @@ body {
 <script>
 class VisionAudioSolver {
     constructor() {
-        this.state = 'IDLE'; // IDLE, CAPTURING, EXTRACTING, SOLVING_BATCH, ERROR
+        this.state = 'IDLE';
         this.dom = this._getDomElements();
         this.settings = this._loadSettings();
         this.cameraStream = null;
@@ -303,24 +306,19 @@ class VisionAudioSolver {
         this._log('App Initializing...');
         this._bindEvents();
         try {
-            // *** CAMERA FIX: Robust initialization sequence ***
             const cameraDevices = await this._enumerateCameras();
             let deviceIdToUse = this.settings.cameraId;
 
-            // Check if saved camera is valid, otherwise use the first available one.
             if (!deviceIdToUse || !cameraDevices.some(d => d.deviceId === deviceIdToUse)) {
                 this._log('Saved camera not found or not set. Using first available camera.', 'warning');
                 deviceIdToUse = cameraDevices[0]?.deviceId;
                 if (deviceIdToUse) {
-                    // Update settings with the new valid default
                     this.settings.cameraId = deviceIdToUse;
                     localStorage.setItem('vision_solver_camera', deviceIdToUse);
                 }
             }
 
-            if (!deviceIdToUse) {
-                throw new Error("No camera devices were found.");
-            }
+            if (!deviceIdToUse) throw new Error("No camera devices were found.");
             
             await this._startCamera(deviceIdToUse);
             this._log('App Ready.', 'success');
@@ -410,7 +408,7 @@ class VisionAudioSolver {
 
     async _enumerateCameras() {
         this._log("Enumerating cameras...");
-        await navigator.mediaDevices.getUserMedia({video: true}); // Request permission first
+        await navigator.mediaDevices.getUserMedia({video: true});
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(d => d.kind === 'videoinput');
 
@@ -420,7 +418,7 @@ class VisionAudioSolver {
         } else {
             this._log("No cameras found.", 'error');
         }
-        return videoDevices; // Return the list for the initializer
+        return videoDevices;
     }
 
     async _startCamera(deviceId) {
@@ -451,10 +449,11 @@ class VisionAudioSolver {
             this.dom.zoomSlider.min = capabilities.zoom.min;
             this.dom.zoomSlider.max = capabilities.zoom.max;
             this.dom.zoomSlider.step = capabilities.zoom.step || 0.1;
-            this.dom.zoomSlider.value = this.videoTrack.getSettings().zoom || 1;
+            this.dom.zoomSlider.value = this.videoTrack.getSettings()?.zoom || 1;
             this.dom.zoomControl.classList.add('show');
         } else {
             this.dom.zoomControl.classList.remove('show');
+            this._log("Zoom not supported by this camera.", 'warning');
         }
     }
     
@@ -518,24 +517,31 @@ class VisionAudioSolver {
                     })
                 });
                 
-                // *** API FIX: Detailed error logging ***
                 if (!response.ok) {
                     let errorBody;
-                    try {
-                        errorBody = await response.json();
-                    } catch (e) {
-                        throw new Error(`HTTP Error ${response.status} ${response.statusText}`);
-                    }
+                    try { errorBody = await response.json(); } catch (e) { throw new Error(`HTTP Error ${response.status} ${response.statusText}`); }
                     const message = errorBody.error?.message || JSON.stringify(errorBody);
                     throw new Error(`OpenAI API Error: ${response.status} - ${message}`);
                 }
 
                 const data = await response.json();
-                const resultObject = JSON.parse(data.choices[0].message.content);
-                const result = Object.values(resultObject).find(v => Array.isArray(v));
-                if(!result) throw new Error("AI did not return a valid question array from JSON response.");
-                this._log("OpenAI extraction successful.", 'success');
-                return result;
+                let parsedContent;
+                try {
+                    parsedContent = JSON.parse(data.choices[0].message.content);
+                } catch(e) {
+                    throw new Error("Failed to parse JSON response from OpenAI.");
+                }
+
+                // *** FIX: Robustly find the array in the response ***
+                if (Array.isArray(parsedContent)) {
+                    return parsedContent; // It's already an array
+                }
+                if (typeof parsedContent === 'object' && parsedContent !== null) {
+                    const arrayValue = Object.values(parsedContent).find(v => Array.isArray(v));
+                    if (arrayValue) return arrayValue; // Found the array inside an object
+                }
+                
+                throw new Error("AI did not return a valid question array.");
             }
         },
         gemini: {
@@ -553,14 +559,9 @@ class VisionAudioSolver {
                     })
                 });
 
-                // *** API FIX: Detailed error logging ***
                 if (!response.ok) {
                     let errorBody;
-                    try {
-                        errorBody = await response.json();
-                    } catch (e) {
-                        throw new Error(`HTTP Error ${response.status} ${response.statusText}`);
-                    }
+                    try { errorBody = await response.json(); } catch (e) { throw new Error(`HTTP Error ${response.status} ${response.statusText}`); }
                     const message = errorBody.error?.message || JSON.stringify(errorBody);
                     throw new Error(`Gemini API Error: ${response.status} - ${message}`);
                 }
