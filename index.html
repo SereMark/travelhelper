@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Vision AI - Audio First</title>
+<title>Vision AI - Final</title>
 <style>
 :root {
     --safe-area-inset-top: env(safe-area-inset-top, 20px);
@@ -203,11 +203,15 @@ body {
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, color 0.2s;
 }
 .copy-logs-btn {
     background: rgba(0, 122, 255, 0.15);
     color: #007AFF;
+}
+.copy-logs-btn.copied {
+    background-color: #32D74B;
+    color: #fff;
 }
 .clear-logs-btn {
     background: rgba(255,59,48,0.15);
@@ -224,7 +228,7 @@ body {
     height: 300px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    user-select: text; /* PERFECTION: Make logs selectable */
+    user-select: text;
     -webkit-user-select: text;
 }
 .log-entry {
@@ -285,7 +289,9 @@ body {
 <script>
 class VisionAudioSolver {
     constructor() {
-        this.state = 'IDLE';
+        this.state = 'IDLE'; // IDLE, CAPTURING, EXTRACTING, SOLVING_BATCH, WAITING, ERROR
+        this.isContinuousMode = false;
+        this.scanLoopTimer = null;
         this.dom = this._getDomElements();
         this.settings = this._loadSettings();
         this.cameraStream = null;
@@ -342,12 +348,12 @@ class VisionAudioSolver {
             this._log('App Ready.', 'success');
             this._setState('IDLE');
         } catch (err) {
-            this._handleError(err.message);
+            this._handleError(err.message, false); // Don't stop loop on init error
         }
     }
     
     _bindEvents() {
-        this.dom.toggleBtn.addEventListener('click', () => this.toggleScan());
+        this.dom.toggleBtn.addEventListener('click', () => this.toggleContinuousScan());
         this.dom.settingsBtn.addEventListener('click', () => this.openSettings());
         this.dom.closeBtn.addEventListener('click', () => this.saveAndCloseSettings());
         this.dom.clearLogsBtn.addEventListener('click', () => {
@@ -363,21 +369,30 @@ class VisionAudioSolver {
     _setState(newState) {
         this.state = newState;
         this._log(`State changed to: ${newState}`, 'info');
-        this.dom.toggleBtn.classList.toggle('active', newState !== 'IDLE' && newState !== 'ERROR');
+        // The button's active state is now controlled by isContinuousMode
     }
 
-    toggleScan() {
-        if (this.state === 'IDLE' || this.state === 'ERROR') {
-            this.startScan();
-        } else {
+    toggleContinuousScan() {
+        if (this.isContinuousMode) {
+            // Stop the loop
+            this.isContinuousMode = false;
+            this.dom.toggleBtn.classList.remove('active');
+            clearTimeout(this.scanLoopTimer);
             speechSynthesis.cancel();
-            this._speak("Scan cancelled.");
+            this._speak("Continuous scan stopped.");
+            this._log("Continuous scan loop deactivated by user.", 'warning');
             this._setState('IDLE');
+        } else {
+            // Start the loop
+            this.isContinuousMode = true;
+            this.dom.toggleBtn.classList.add('active');
+            this._log("Continuous scan loop activated by user.", 'info');
+            this.startScan();
         }
     }
 
     async startScan() {
-        if (this.state !== 'IDLE' && this.state !== 'ERROR') return;
+        if (this.state !== 'IDLE' && this.state !== 'ERROR' && this.state !== 'WAITING') return;
         
         if (!this.settings.openai || !this.settings.gemini) {
             return this._handleError("API Keys are not set in settings.");
@@ -408,18 +423,35 @@ class VisionAudioSolver {
             });
             speechText += "Scan complete.";
             
-            this._speak(speechText);
-            this._setState('IDLE');
+            this._log("Scan cycle completed successfully.", 'success');
+            
+            this._speak(speechText, () => {
+                // This callback runs after speech finishes
+                if (this.isContinuousMode) {
+                    this._setState('WAITING');
+                    this._log('Entering 5-second wait before next scan...');
+                    this.scanLoopTimer = setTimeout(() => {
+                        this.startScan();
+                    }, 5000);
+                } else {
+                    this._setState('IDLE');
+                }
+            });
 
         } catch (err) {
             this._handleError(err.message);
         }
     }
 
-    _handleError(errorMessage) {
+    _handleError(errorMessage, stopLoop = true) {
         this._log(errorMessage, 'error');
         this._speak(`Error. Check the logs.`);
         this._setState('ERROR');
+        if (stopLoop) {
+            this.isContinuousMode = false;
+            this.dom.toggleBtn.classList.remove('active');
+            this._log("Continuous scan loop stopped due to error.", 'error');
+        }
     }
 
     // --- 3. HARDWARE & DEVICE CONTROLS ---
@@ -497,12 +529,21 @@ class VisionAudioSolver {
         return canvas.toDataURL('image/jpeg', 0.9);
     }
 
-    _speak(text) {
+    _speak(text, onEndCallback) {
         this._log(`Speaking: "${text}"`, 'info');
-        if (!('speechSynthesis' in window)) return this._log("Speech synthesis not supported.", 'error');
+        if (!('speechSynthesis' in window)) {
+            this._log("Speech synthesis not supported.", 'error');
+            if(onEndCallback) onEndCallback();
+            return;
+        }
         speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 1.0;
+        utterance.onend = onEndCallback; // Trigger callback when speech finishes
+        utterance.onerror = (event) => {
+            this._log(`Speech error: ${event.error}`, 'error');
+            if(onEndCallback) onEndCallback(); // Ensure loop continues even if speech fails
+        };
         speechSynthesis.speak(utterance);
     }
 
@@ -520,29 +561,45 @@ class VisionAudioSolver {
         this.dom.logContainer.appendChild(entry);
         this.dom.logContainer.scrollTop = this.dom.logContainer.scrollHeight;
     }
+    
+    _copyLogsToClipboard() {
+        this._log("Copying logs to clipboard...");
+        const logText = this.dom.logContainer.innerText; // .innerText preserves line breaks
+
+        navigator.clipboard.writeText(logText).then(() => {
+            this._log('Logs copied successfully!', 'success');
+            const btn = this.dom.copyLogsBtn;
+            if (btn.classList.contains('copied')) return; // Prevent re-triggering animation
+            
+            btn.textContent = "Copied!";
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = "Copy";
+                btn.classList.remove('copied');
+            }, 2000);
+        }).catch(err => {
+            this._log('Failed to copy logs to clipboard: ' + err, 'error');
+        });
+    }
 
     _api = {
         openai: {
             extract: async (imageData, apiKey) => {
                 this._log("Attempting structured JSON extraction...");
-                this._speak("Extracting questions");
-
                 const jsonPrompt = `You are an expert at analyzing images. Your task is to find all distinct multiple-choice questions in the provided image. Your entire response MUST be a single JSON object with one key, "questions", which contains an array of objects. Each object must have a "number" (integer) and a "text" (string) key. Use the "Question X" box for the number. Combine the question and all its options (a, b, c, etc.) into the text field. Ignore all other metadata. If you cannot find any questions, you MUST return an object with an empty array: {"questions": []}. Do not include any other text or explanations.`;
                 let response = await this._api.openai._call(imageData, apiKey, jsonPrompt, true);
                 
                 let rawContent = response.data?.choices?.[0]?.message?.content;
-                let finishDetails = response.data?.choices?.[0]?.finish_details || { type: 'unknown' };
                 
                 this._log(`Received raw content from OpenAI (JSON attempt): ${rawContent}`, 'info');
-                this._log(`Finish reason: ${finishDetails.type}`, 'info');
 
                 if (rawContent) {
                     const jsonMatch = rawContent.match(/{[\s\S]*}/);
                     if (jsonMatch) {
                         try {
                             const parsedContent = JSON.parse(jsonMatch[0]);
-                            if (parsedContent?.questions && Array.isArray(parsedContent.questions) && parsedContent.questions.length > 0) {
-                                this._log("JSON extraction successful.", 'success');
+                            if (parsedContent?.questions && Array.isArray(parsedContent.questions)) {
+                                this._log(`JSON extraction successful. Method: ${Array.isArray(parsedContent.questions) ? 'Direct Array' : 'Nested Object'}.`, 'success');
                                 return parsedContent.questions;
                             }
                         } catch (e) {
@@ -552,7 +609,7 @@ class VisionAudioSolver {
                 }
                 
                 // --- FALLBACK LOGIC ---
-                this._log('JSON mode failed. Initiating plain text fallback.', 'warning');
+                this._log('JSON mode failed or returned empty. Initiating plain text fallback.', 'warning');
                 this._speak("Extraction failed, trying a different method.");
 
                 const textPrompt = `List all multiple-choice questions from the image in plain text. Format each one strictly as: "Question [number]: [full question text including all a, b, c, d options]".`;
@@ -661,29 +718,6 @@ class VisionAudioSolver {
         }
         
         this.dom.settingsPanel.classList.remove('open');
-    }
-
-    _copyLogsToClipboard() {
-        this._log("Copying logs to clipboard...");
-        const logEntries = this.dom.logContainer.querySelectorAll('.log-entry');
-        let logText = "";
-        logEntries.forEach(entry => {
-            logText += entry.textContent.trim() + '\n';
-        });
-
-        navigator.clipboard.writeText(logText).then(() => {
-            this._log('Logs copied successfully!', 'success');
-            const originalText = this.dom.copyLogsBtn.textContent;
-            const originalColor = this.dom.copyLogsBtn.style.backgroundColor;
-            this.dom.copyLogsBtn.textContent = "Copied!";
-            this.dom.copyLogsBtn.style.backgroundColor = '#32D74B';
-            setTimeout(() => {
-                this.dom.copyLogsBtn.textContent = originalText;
-                this.dom.copyLogsBtn.style.backgroundColor = originalColor;
-            }, 2000);
-        }).catch(err => {
-            this._log('Failed to copy logs to clipboard: ' + err, 'error');
-        });
     }
 }
 
