@@ -192,14 +192,26 @@ body {
     align-items: center;
     margin-bottom: 10px;
 }
-.clear-logs-btn {
-    background: rgba(255,59,48,0.2);
+.log-actions {
+    display: flex;
+    gap: 10px;
+}
+.log-btn {
     border: none;
     border-radius: 8px;
-    color: #FF453A;
     padding: 6px 12px;
     font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
+    transition: background-color 0.2s;
+}
+.copy-logs-btn {
+    background: rgba(0, 122, 255, 0.15);
+    color: #007AFF;
+}
+.clear-logs-btn {
+    background: rgba(255,59,48,0.15);
+    color: #FF453A;
 }
 .log-container {
     background: #000;
@@ -209,9 +221,11 @@ body {
     font-family: 'SF Mono', 'Monaco', monospace;
     font-size: 11px;
     line-height: 1.6;
-    height: 300px; /* Fixed height for consistent layout */
+    height: 300px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    user-select: text; /* PERFECTION: Make logs selectable */
+    -webkit-user-select: text;
 }
 .log-entry {
     margin-bottom: 4px;
@@ -258,7 +272,10 @@ body {
         <div class="section">
             <div class="logs-header">
                 <h3 class="section-title">Debug Log</h3>
-                <button class="clear-logs-btn" id="clearLogsBtn">Clear</button>
+                <div class="log-actions">
+                    <button class="log-btn copy-logs-btn" id="copyLogsBtn">Copy</button>
+                    <button class="log-btn clear-logs-btn" id="clearLogsBtn">Clear</button>
+                </div>
             </div>
             <div class="log-container" id="logContainer"></div>
         </div>
@@ -291,6 +308,7 @@ class VisionAudioSolver {
             cameraSelect: document.getElementById('cameraSelect'),
             logContainer: document.getElementById('logContainer'),
             clearLogsBtn: document.getElementById('clearLogsBtn'),
+            copyLogsBtn: document.getElementById('copyLogsBtn'),
         };
     }
 
@@ -336,6 +354,7 @@ class VisionAudioSolver {
             this.dom.logContainer.innerHTML = '';
             this._log("Logs cleared.");
         });
+        this.dom.copyLogsBtn.addEventListener('click', () => this._copyLogsToClipboard());
         this.dom.zoomSlider.addEventListener('input', (e) => this._setZoom(e.target.value));
     }
 
@@ -504,7 +523,6 @@ class VisionAudioSolver {
 
     _api = {
         openai: {
-            // *** THE DEFINITIVE, BULLETPROOF EXTRACTION FUNCTION ***
             extract: async (imageData, apiKey) => {
                 this._log("Attempting structured JSON extraction...");
                 this._speak("Extracting questions");
@@ -524,10 +542,11 @@ class VisionAudioSolver {
                         try {
                             const parsedContent = JSON.parse(jsonMatch[0]);
                             if (parsedContent?.questions && Array.isArray(parsedContent.questions) && parsedContent.questions.length > 0) {
-                                return parsedContent.questions; // Success
+                                this._log("JSON extraction successful.", 'success');
+                                return parsedContent.questions;
                             }
                         } catch (e) {
-                            this._log('JSON parsing failed, initiating fallback.', 'warning');
+                           this._log('JSON parsing failed, initiating fallback.', 'warning');
                         }
                     }
                 }
@@ -573,6 +592,7 @@ class VisionAudioSolver {
             },
 
             _parseTextToQuestions: (text) => {
+                this._log("Parsing plain text response with regex.", 'info');
                 const questions = [];
                 const regex = /Question\s*(\d+):\s*([\s\S]*?)(?=Question\s*\d+:|$)/g;
                 let match;
@@ -641,6 +661,29 @@ class VisionAudioSolver {
         }
         
         this.dom.settingsPanel.classList.remove('open');
+    }
+
+    _copyLogsToClipboard() {
+        this._log("Copying logs to clipboard...");
+        const logEntries = this.dom.logContainer.querySelectorAll('.log-entry');
+        let logText = "";
+        logEntries.forEach(entry => {
+            logText += entry.textContent.trim() + '\n';
+        });
+
+        navigator.clipboard.writeText(logText).then(() => {
+            this._log('Logs copied successfully!', 'success');
+            const originalText = this.dom.copyLogsBtn.textContent;
+            const originalColor = this.dom.copyLogsBtn.style.backgroundColor;
+            this.dom.copyLogsBtn.textContent = "Copied!";
+            this.dom.copyLogsBtn.style.backgroundColor = '#32D74B';
+            setTimeout(() => {
+                this.dom.copyLogsBtn.textContent = originalText;
+                this.dom.copyLogsBtn.style.backgroundColor = originalColor;
+            }, 2000);
+        }).catch(err => {
+            this._log('Failed to copy logs to clipboard: ' + err, 'error');
+        });
     }
 }
 
