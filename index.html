@@ -5,83 +5,271 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Vision AI - Multi-Solver 2.5</title>
+<title>Vision AI - Audio First</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
-body { font-family: -apple-system, system-ui, sans-serif; background: #000; color: #fff; overflow: hidden; position: fixed; width: 100%; height: 100%; }
-#camera { width: 100%; height: 100%; object-fit: cover; }
+:root {
+    --safe-area-inset-top: env(safe-area-inset-top, 20px);
+    --safe-area-inset-bottom: env(safe-area-inset-bottom, 20px);
+}
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+}
+body {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #000;
+    color: #fff;
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+}
+#camera {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+}
 
-/* --- Core UI Controls --- */
-.main-controls { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; align-items: center; z-index: 10; }
-.toggle-btn { width: 70px; height: 70px; border-radius: 50%; background: #007AFF; border: 3px solid #fff; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-.toggle-btn:active { transform: scale(0.95); }
-.toggle-btn.active { background: #FF3B30; animation: pulse 1.5s infinite; }
-@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); } 50% { box-shadow: 0 0 0 15px rgba(255, 59, 48, 0); } }
-.settings-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: none; font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+/* --- CORE UI --- */
+.main-controls {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    z-index: 10;
+}
+.toggle-btn {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: #007AFF;
+    border: 3px solid #fff;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.toggle-btn:active {
+    transform: scale(0.95);
+}
+.toggle-btn.active {
+    background: #FF3B30;
+    animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
+    50% { box-shadow: 0 0 0 15px rgba(255, 59, 48, 0); }
+}
+.settings-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
 
-/* --- Status & Results UI --- */
-.status-display { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); backdrop-filter: blur(10px); padding: 8px 20px; border-radius: 20px; font-size: 14px; font-weight: 600; z-index: 20; transition: opacity 0.3s, transform 0.3s; }
-.status-display.hidden { opacity: 0; transform: translate(-50%, -50px); }
-.status-display.error { background: #FF3B30; }
+.zoom-control {
+    position: fixed;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 10px;
+    z-index: 10;
+    display: none; /* Hidden by default, shown via JS */
+}
+.zoom-slider {
+    writing-mode: bt-lr;
+    -webkit-appearance: slider-vertical;
+    width: 40px;
+    height: 200px;
+    background: transparent;
+    outline: none;
+    cursor: pointer;
+}
 
-.results-panel { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(20, 20, 20, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.15); padding: 20px; padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 90px); z-index: 50; transform: translateY(100%); transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); max-height: 50vh; overflow-y: auto; }
-.results-panel.show { transform: translateY(0); }
-.results-header { font-size: 22px; font-weight: 600; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-.results-list { display: grid; gap: 20px; }
-.result-item { display: flex; align-items: center; gap: 20px; }
-.result-item-q-number { font-size: 16px; font-weight: 600; color: #fff; background-color: rgba(255,255,255,0.1); width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.result-item-answer { font-size: 28px; font-weight: bold; }
+/* --- SETTINGS PANEL --- */
+.settings {
+    position: fixed;
+    inset: 0;
+    background: #121212;
+    transform: translateX(100%);
+    transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+}
+.settings.open {
+    transform: translateX(0);
+}
+.settings-header {
+    padding: 15px 20px;
+    padding-top: var(--safe-area-inset-top);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    flex-shrink: 0;
+}
+.settings h2 {
+    font-size: 24px;
+}
+.close-btn {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 28px;
+    cursor: pointer;
+}
+.settings-content {
+    padding: 20px;
+    overflow-y: auto;
+    flex-grow: 1;
+    -webkit-overflow-scrolling: touch;
+}
+.section {
+    margin-bottom: 25px;
+}
+.section-title {
+    font-size: 13px;
+    opacity: 0.5;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+}
+.input-group {
+    background: #222;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+.input-group label {
+    font-size: 14px;
+    opacity: 0.7;
+    margin-bottom: 8px;
+}
+.input-group input, .input-group select {
+    width: 100%;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 16px;
+    outline: none;
+    font-family: inherit;
+}
+.input-group select {
+    appearance: none;
+    -webkit-appearance: none;
+}
 
-.results-actions { position: fixed; bottom: 0; left: 0; right: 0; padding: 15px 20px env(safe-area-inset-bottom, 15px) 20px; background: rgba(20, 20, 20, 0.85); display: grid; grid-template-columns: 1fr 1fr; gap: 15px; z-index: 51; }
-.action-btn { padding: 16px; border-radius: 12px; border: none; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.1s, background-color 0.2s; }
-.action-btn:active { transform: scale(0.97); }
-#confirmBtn { background: #007AFF; color: #fff; }
-#rescanBtn { background: rgba(255,255,255,0.15); color: #fff; }
-
-/* --- Settings Panel (Minimal) --- */
-.settings { position: fixed; inset: 0; background: #1C1C1E; transform: translateX(100%); transition: transform 0.3s ease; overflow-y: auto; z-index: 1000; padding: 20px; padding-top: env(safe-area-inset-top, 20px); }
-.settings.open { transform: translateX(0); }
-.settings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-.settings h2 { font-size: 28px; }
-.close-btn { background: none; border: none; color: #888; font-size: 28px; cursor: pointer; }
-.input-group { background: #2C2C2E; padding: 12px 16px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-label { font-size: 16px; }
-input[type="password"] { background: none; border: none; color: #fff; font-size: 16px; text-align: right; width: 60%; outline: none; }
+/* --- LOGS SECTION --- */
+.logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.clear-logs-btn {
+    background: rgba(255,59,48,0.2);
+    border: none;
+    border-radius: 8px;
+    color: #FF453A;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.log-container {
+    background: #000;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 16px;
+    font-family: 'SF Mono', 'Monaco', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    height: 300px; /* Fixed height for consistent layout */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.log-entry {
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+.log-time {
+    opacity: 0.4;
+    padding-right: 8px;
+}
+.log-entry.error { color: #FF453A; }
+.log-entry.success { color: #32D74B; }
+.log-entry.info { color: #64D2FF; }
+.log-entry.warning { color: #FFD60A; }
 </style>
 </head>
 <body>
 
 <video id="camera" playsinline autoplay muted></video>
 
-<div class="status-display hidden" id="statusDisplay">Initializing...</div>
-
 <div class="main-controls">
     <button class="toggle-btn" id="toggleBtn"></button>
     <button class="settings-btn" id="settingsBtn">⚙️</button>
 </div>
 
-<div class="results-panel" id="resultsPanel">
-    <h3 class="results-header" id="resultsHeader"></h3>
-    <div class="results-list" id="resultsList"></div>
-</div>
-<div class="results-actions" id="resultsActions" style="transform: translateY(200%)">
-    <button class="action-btn" id="rescanBtn">Re-Scan</button>
-    <button class="action-btn" id="confirmBtn">Confirm</button>
+<div class="zoom-control" id="zoomControl">
+    <input type="range" class="zoom-slider" id="zoomSlider">
 </div>
 
 <div class="settings" id="settingsPanel">
-    <div class="settings-header"><h2>Settings</h2><button class="close-btn" id="closeBtn">×</button></div>
-    <div class="input-group"><label>OpenAI API Key</label><input type="password" id="openaiKey"></div>
-    <div class="input-group"><label>Google AI API Key</label><input type="password" id="geminiKey"></div>
+    <div class="settings-header">
+        <h2>Settings</h2>
+        <button class="close-btn" id="closeBtn">×</button>
+    </div>
+    <div class="settings-content">
+        <div class="section">
+            <h3 class="section-title">API Configuration</h3>
+            <div class="input-group"><label>OpenAI API Key</label><input type="password" id="openaiKey" placeholder="sk-..."></div>
+            <div class="input-group"><label>Google AI API Key</label><input type="password" id="geminiKey" placeholder="AIza..."></div>
+        </div>
+        <div class="section">
+            <h3 class="section-title">Device Settings</h3>
+            <div class="input-group"><label>Camera</label><select id="cameraSelect"><option>Loading...</option></select></div>
+        </div>
+        <div class="section">
+            <div class="logs-header">
+                <h3 class="section-title">Debug Log</h3>
+                <button class="clear-logs-btn" id="clearLogsBtn">Clear</button>
+            </div>
+            <div class="log-container" id="logContainer"></div>
+        </div>
+    </div>
 </div>
 
 <script>
-class VisionMultiSolver {
+class VisionAudioSolver {
     constructor() {
-        this.state = 'IDLE'; // IDLE, EXTRACTING, SOLVING_BATCH, AWAITING_CONFIRMATION, ERROR
+        this.state = 'IDLE'; // IDLE, CAPTURING, EXTRACTING, SOLVING_BATCH, ERROR
         this.dom = this._getDomElements();
         this.settings = this._loadSettings();
-        this.currentBatchResult = null;
+        this.cameraStream = null;
+        this.videoTrack = null;
     }
 
     // --- 1. INITIALIZATION & SETUP ---
@@ -91,17 +279,15 @@ class VisionMultiSolver {
             camera: document.getElementById('camera'),
             toggleBtn: document.getElementById('toggleBtn'),
             settingsBtn: document.getElementById('settingsBtn'),
-            statusDisplay: document.getElementById('statusDisplay'),
-            resultsPanel: document.getElementById('resultsPanel'),
-            resultsHeader: document.getElementById('resultsHeader'),
-            resultsList: document.getElementById('resultsList'),
-            resultsActions: document.getElementById('resultsActions'),
-            rescanBtn: document.getElementById('rescanBtn'),
-            confirmBtn: document.getElementById('confirmBtn'),
+            zoomControl: document.getElementById('zoomControl'),
+            zoomSlider: document.getElementById('zoomSlider'),
             settingsPanel: document.getElementById('settingsPanel'),
             closeBtn: document.getElementById('closeBtn'),
             openaiKey: document.getElementById('openaiKey'),
             geminiKey: document.getElementById('geminiKey'),
+            cameraSelect: document.getElementById('cameraSelect'),
+            logContainer: document.getElementById('logContainer'),
+            clearLogsBtn: document.getElementById('clearLogsBtn'),
         };
     }
 
@@ -109,169 +295,205 @@ class VisionMultiSolver {
         return {
             openai: localStorage.getItem('vision_solver_openai') || '',
             gemini: localStorage.getItem('vision_solver_gemini') || '',
+            cameraId: localStorage.getItem('vision_solver_camera') || '',
         };
     }
 
     async initialize() {
-        this._setState('INITIALIZING');
+        this._log('App Initializing...');
         this._bindEvents();
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'environment' } });
-            this.dom.camera.srcObject = stream;
-            await this.dom.camera.play();
+            await this._enumerateCameras();
+            await this._startCamera(this.settings.cameraId);
+            this._log('App Ready.', 'success');
             this._setState('IDLE');
         } catch (err) {
-            this._handleError(`Camera Failed: ${err.message}`);
+            this._handleError(err.message);
         }
     }
     
     _bindEvents() {
         this.dom.toggleBtn.addEventListener('click', () => this.toggleScan());
         this.dom.settingsBtn.addEventListener('click', () => this.openSettings());
-        this.dom.closeBtn.addEventListener('click', () => this.closeSettings());
-        this.dom.confirmBtn.addEventListener('click', () => this.confirmAndReset());
-        this.dom.rescanBtn.addEventListener('click', () => this.rescan());
-    }
-
-    // --- 2. STATE & UI MANAGEMENT ---
-
-    _setState(newState, message) {
-        this.state = newState;
-        console.log(`State -> ${newState}`);
-        
-        const { statusDisplay, resultsPanel, resultsActions, toggleBtn } = this.dom;
-        statusDisplay.classList.remove('error', 'hidden');
-        resultsPanel.classList.remove('show');
-        resultsActions.style.transform = 'translateY(200%)';
-
-        switch (newState) {
-            case 'IDLE':
-                statusDisplay.classList.add('hidden');
-                toggleBtn.classList.remove('active');
-                break;
-            case 'AWAITING_CONFIRMATION':
-                statusDisplay.classList.add('hidden');
-                toggleBtn.classList.remove('active');
-                this._presentBatchResults();
-                break;
-            case 'ERROR':
-                statusDisplay.textContent = message;
-                statusDisplay.classList.add('error');
-                toggleBtn.classList.remove('active');
-                break;
-            default: // Processing states
-                statusDisplay.textContent = message || `${newState.charAt(0)}${newState.slice(1).toLowerCase().replace('_', ' ')}...`;
-                toggleBtn.classList.add('active');
-        }
-    }
-
-    _presentBatchResults() {
-        if (!this.currentBatchResult || this.currentBatchResult.length === 0) return;
-        
-        const { resultsHeader, resultsList, resultsPanel, resultsActions } = this.dom;
-        
-        resultsHeader.textContent = `Found ${this.currentBatchResult.length} Question${this.currentBatchResult.length > 1 ? 's' : ''}`;
-        resultsList.innerHTML = ''; // Clear previous results
-
-        let speechText = '';
-        this.currentBatchResult.forEach(item => {
-            const itemEl = document.createElement('div');
-            itemEl.className = 'result-item';
-            itemEl.innerHTML = `
-                <div class="result-item-q-number">${item.number}</div>
-                <div class="result-item-answer">${item.answer.split(',').join(', ')}</div>
-            `;
-            resultsList.appendChild(itemEl);
-            speechText += `Answer for question ${item.number}: ${item.answer.split(',').join(', ')}. `;
+        this.dom.closeBtn.addEventListener('click', () => this.saveAndCloseSettings());
+        this.dom.clearLogsBtn.addEventListener('click', () => {
+            this.dom.logContainer.innerHTML = '';
+            this._log("Logs cleared.");
         });
-
-        resultsPanel.classList.add('show');
-        resultsActions.style.transform = 'translateY(0)';
-        this._speak(speechText);
+        this.dom.zoomSlider.addEventListener('input', (e) => this._setZoom(e.target.value));
     }
-    
-    // --- 3. CORE SCANNING WORKFLOW ---
+
+    // --- 2. STATE & CORE WORKFLOW ---
+
+    _setState(newState) {
+        this.state = newState;
+        this._log(`State changed to: ${newState}`, 'info');
+        this.dom.toggleBtn.classList.toggle('active', newState !== 'IDLE' && newState !== 'ERROR');
+    }
 
     toggleScan() {
         if (this.state === 'IDLE' || this.state === 'ERROR') {
             this.startScan();
         } else {
+            speechSynthesis.cancel(); // Stop any ongoing speech
+            this._speak("Scan cancelled.");
             this._setState('IDLE');
         }
     }
 
     async startScan() {
+        if (this.state !== 'IDLE' && this.state !== 'ERROR') return; // Prevent multiple concurrent scans
+        
         if (!this.settings.openai || !this.settings.gemini) {
-            return this._handleError("API Keys not set in settings.");
+            return this._handleError("API Keys are not set in settings.");
         }
 
         try {
-            // PHASE 1: Capture & Extract
-            this._setState('EXTRACTING', 'Capturing & Extracting Questions');
+            this._setState('CAPTURING');
+            this._speak("Scanning");
             const imageData = this._captureImage();
+
+            this._setState('EXTRACTING');
+            this._speak("Extracting questions");
             const extractedQuestions = await this._api.openai.extract(imageData, this.settings.openai);
             
             if (extractedQuestions.length === 0) {
                 throw new Error("No questions found in the image.");
             }
+            this._log(`Found ${extractedQuestions.length} question(s).`, 'success');
 
-            // PHASE 2: Solve Batch
-            this._setState('SOLVING_BATCH', `Solving ${extractedQuestions.length} Question${extractedQuestions.length > 1 ? 's' : ''}`);
+            this._setState('SOLVING_BATCH');
+            this._speak(`Solving with Gemini 2.5 Pro`);
             const solvedAnswers = await this._api.gemini.solveBatch(extractedQuestions, this.settings.gemini);
 
-            // Combine results
-            this.currentBatchResult = extractedQuestions.map(q => ({
-                number: q.number,
-                answer: solvedAnswers[q.number] || 'N/A' // Fallback if a number isn't in the response
-            }));
+            let speechText = '';
+            extractedQuestions.forEach(q => {
+                const answer = solvedAnswers[q.number] || 'Not found';
+                this._log(`Q#${q.number} -> Answer: ${answer}`, 'success');
+                speechText += `Answer for question ${q.number}: ${answer.split(',').join(', ')}. `;
+            });
+            speechText += "Scan complete.";
             
-            this._setState('AWAITING_CONFIRMATION');
+            this._speak(speechText);
+            this._setState('IDLE');
 
         } catch (err) {
             this._handleError(err.message);
         }
     }
-    
-    confirmAndReset() {
-        this._setState('IDLE');
-    }
-    
-    rescan() {
-        this._setState('IDLE');
-        // A brief delay to allow the panel to hide before starting again
-        setTimeout(() => this.startScan(), 100);
-    }
 
     _handleError(errorMessage) {
-        console.error("Workflow Error:", errorMessage);
-        this._setState('ERROR', errorMessage);
+        this._log(errorMessage, 'error');
         this._speak(`Error: ${errorMessage.substring(0, 100)}`);
+        this._setState('ERROR');
     }
 
-    // --- 4. HELPERS (CAPTURE, SPEECH, API) ---
+    // --- 3. HARDWARE & DEVICE CONTROLS ---
+
+    async _enumerateCameras() {
+        this._log("Enumerating cameras...");
+        try {
+            await navigator.mediaDevices.getUserMedia({video: true}); // Request permission
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(d => d.kind === 'videoinput');
+            if (videoDevices.length === 0) throw new Error("No cameras found.");
+
+            this.dom.cameraSelect.innerHTML = videoDevices.map(d => `<option value="${d.deviceId}">${d.label || `Camera ${videoDevices.indexOf(d)+1}`}</option>`).join('');
+            this.dom.cameraSelect.value = this.settings.cameraId || videoDevices[0].deviceId;
+            this._log(`Found ${videoDevices.length} cameras.`, 'success');
+        } catch(err) {
+            this._handleError("Could not access camera devices.");
+        }
+    }
+
+    async _startCamera(deviceId) {
+        this._log(`Attempting to start camera: ${deviceId ? deviceId.substring(0,8) : 'Default'}`);
+        if (this.cameraStream) {
+            this.cameraStream.getTracks().forEach(track => track.stop());
+        }
+        try {
+            const constraints = { video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1920 }, height: { ideal: 1080 } } };
+            this.cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+            this.dom.camera.srcObject = this.cameraStream;
+            await this.dom.camera.play();
+            this.videoTrack = this.cameraStream.getVideoTracks()[0];
+            this._setupZoom();
+            this._log("Camera started successfully.", "success");
+        } catch (err) {
+            this._handleError(`Failed to start camera: ${err.name}`);
+        }
+    }
+
+    _setupZoom() {
+        if (!this.videoTrack?.getCapabilities) {
+            return this.dom.zoomControl.classList.remove('show');
+        }
+        const capabilities = this.videoTrack.getCapabilities();
+        if (capabilities.zoom) {
+            this._log(`Zoom supported: [${capabilities.zoom.min}-${capabilities.zoom.max}]`, 'info');
+            this.dom.zoomSlider.min = capabilities.zoom.min;
+            this.dom.zoomSlider.max = capabilities.zoom.max;
+            this.dom.zoomSlider.step = capabilities.zoom.step || 0.1;
+            this.dom.zoomSlider.value = this.videoTrack.getSettings().zoom || 1;
+            this.dom.zoomControl.classList.add('show');
+        } else {
+            this.dom.zoomControl.classList.remove('show');
+            this._log("Zoom not supported by this camera.", 'warning');
+        }
+    }
+    
+    async _setZoom(value) {
+        if (!this.videoTrack || !this.videoTrack.applyConstraints) return;
+        try {
+            await this.videoTrack.applyConstraints({ advanced: [{ zoom: parseFloat(value) }] });
+        } catch (err) {
+            this._log(`Zoom failed: ${err.message}`, 'error');
+        }
+    }
+
+    // --- 4. HELPERS (CAPTURE, SPEECH, API, LOGGING) ---
 
     _captureImage() {
+        this._log("Capturing image...");
         const canvas = document.createElement('canvas');
         canvas.width = this.dom.camera.videoWidth;
         canvas.height = this.dom.camera.videoHeight;
         canvas.getContext('2d').drawImage(this.dom.camera, 0, 0);
+        this._log("Image capture complete.", "success");
         return canvas.toDataURL('image/jpeg', 0.9);
     }
 
     _speak(text) {
-        if (!('speechSynthesis' in window)) return;
-        speechSynthesis.cancel();
+        this._log(`Speaking: "${text}"`, 'info');
+        if (!('speechSynthesis' in window)) return this._log("Speech synthesis not supported.", 'error');
+        speechSynthesis.cancel(); // Ensure no overlapping speech
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 1.0;
         speechSynthesis.speak(utterance);
     }
 
+    _log(message, type = 'log') {
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit'});
+        const consoleMessage = `[${timestamp}] ${message}`;
+        
+        // Log to browser console for deeper debugging
+        if (type === 'error') console.error(consoleMessage);
+        else if (type === 'warning') console.warn(consoleMessage);
+        else console.log(consoleMessage);
+        
+        // Log to UI log container
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${type}`;
+        entry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${message}`;
+        this.dom.logContainer.appendChild(entry);
+        this.dom.logContainer.scrollTop = this.dom.logContainer.scrollHeight;
+    }
+
     _api = {
         openai: {
             extract: async (imageData, apiKey) => {
-                const prompt = `Analyze the image to find all distinct multiple-choice questions. Return a JSON array where each object has "number" (int) and "text" (string) keys. 
-                Example: [{"number": 21, "text": "What is...?"}, {"number": 22, "text": "Which of..."}].
-                If a question number isn't visible, use a logical placeholder. Respond ONLY with the JSON array.`;
+                this._log("Calling OpenAI GPT-4o to extract questions...");
+                const prompt = `Analyze the image to find all distinct multiple-choice questions. Return a JSON array where each object has "number" (int) and "text" (string) keys. Example: [{"number": 21, "text": "What is...?"}, {"number": 22, "text": "Which of..."}]. Respond ONLY with the JSON array.`;
 
                 const response = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
@@ -282,26 +504,22 @@ class VisionMultiSolver {
                         response_format: { type: "json_object" }
                     })
                 });
-                if (!response.ok) throw new Error(`OpenAI Error: ${response.statusText}`);
+                if (!response.ok) throw new Error(`OpenAI API Error: ${response.statusText}`);
                 const data = await response.json();
-                // The JSON will be inside a key, e.g. {"questions": [...]}, so we find the first array.
                 const resultObject = JSON.parse(data.choices[0].message.content);
+                // Handle cases where the key might be dynamic
                 const result = Object.values(resultObject).find(v => Array.isArray(v));
                 if(!result) throw new Error("AI did not return a valid question array.");
+                this._log("OpenAI extraction successful.", 'success');
                 return result;
             }
         },
         gemini: {
             solveBatch: async (questions, apiKey) => {
+                this._log("Calling Gemini 2.5 Pro to solve batch...");
                 const formattedQuestions = questions.map(q => `Question #${q.number}:\n${q.text}`).join('\n\n---\n\n');
-                const prompt = `You are an expert test-taker. Below are several multiple-choice questions. Solve each one.
-                    Return a single JSON object where keys are the question numbers (as strings) and values are the correct letter choices (as strings, e.g., "A" or "B,D").
-                    Example response: {"21": "A", "22": "C,D"}. Do not include any other text or explanation.
-
-                    Questions:
-                    ${formattedQuestions}`;
+                const prompt = `You are an expert test-taker. Below are several multiple-choice questions. Solve each one. Return a single JSON object where keys are the question numbers (as strings) and values are the correct letter choices (as strings, e.g., "A" or "B,D"). Example response: {"21": "A", "22": "C,D"}. Respond ONLY with the JSON object. Questions: ${formattedQuestions}`;
                 
-                // *** MODEL UPGRADED TO GEMINI 2.5 PRO AS REQUESTED ***
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -312,6 +530,7 @@ class VisionMultiSolver {
                 });
                 if (!response.ok) throw new Error(`Gemini 2.5 Pro Error: ${response.statusText}`);
                 const data = await response.json();
+                this._log("Gemini batch solve successful.", 'success');
                 return JSON.parse(data.candidates[0].content.parts[0].text);
             }
         }
@@ -319,25 +538,36 @@ class VisionMultiSolver {
     
     // --- 5. SETTINGS PANEL LOGIC ---
     openSettings() {
+        this._log("Opening settings...");
         this.dom.openaiKey.value = this.settings.openai;
         this.dom.geminiKey.value = this.settings.gemini;
+        this.dom.cameraSelect.value = this.settings.cameraId;
         this.dom.settingsPanel.classList.add('open');
     }
 
-    closeSettings() {
-        // Save on close
+    async saveAndCloseSettings() {
+        this._log("Saving settings and closing...");
+        const newCameraId = this.dom.cameraSelect.value;
         this.settings.openai = this.dom.openaiKey.value.trim();
         this.settings.gemini = this.dom.geminiKey.value.trim();
+
         localStorage.setItem('vision_solver_openai', this.settings.openai);
         localStorage.setItem('vision_solver_gemini', this.settings.gemini);
+        
+        if (this.settings.cameraId !== newCameraId) {
+            this._log("Camera selection changed.", 'info');
+            this.settings.cameraId = newCameraId;
+            localStorage.setItem('vision_solver_camera', this.settings.cameraId);
+            await this._startCamera(this.settings.cameraId); // Restart camera with new selection
+        }
+        
         this.dom.settingsPanel.classList.remove('open');
-        console.log("Settings saved.");
     }
 }
 
 // --- App Entry Point ---
 document.addEventListener('DOMContentLoaded', () => {
-    const app = new VisionMultiSolver();
+    const app = new VisionAudioSolver();
     app.initialize();
 });
 </script>
